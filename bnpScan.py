@@ -5,11 +5,11 @@ TO DO: add temp PV and output to logbook; remove unimportant lines in logbook
 '''
 
 import time, os, sys
-import tqdm
+from tqdm import tqdm
 from epics import caput, caget
 from time import gmtime, strftime
 import numpy as np
-from imgProcessing import *
+#from imgProcessing import *
 import pandas as pd
 
 class bnpScan():
@@ -24,6 +24,12 @@ class bnpScan():
     def logger(self, msg):
         sys.stdout.write(msg)
         sys.stdout.flush()
+        if self.logfid.closed:
+            self.logfid = open(self.logfilepath, 'a')
+        self.logfid.write(msg)
+        self.logfid.flush()
+        
+    def logger_logbook_only(self, msg):
         if self.logfid.closed:
             self.logfid = open(self.logfilepath, 'a')
         self.logfid.write(msg)
@@ -81,8 +87,9 @@ class bnpScan():
                                                      'z_value_Rqs']}}
         self.scandic = scandic
         
-    def setupCoarseFineScans(self, sampleName, scans, pts_area_coarse, orgPos_xyz_0theta, 
-                             elm, pts_area_fine, fine_bbox = True):
+    def setupCoarseFineScans(self, sampleName, scans, BDAin, pts_area_coarse, orgPos_xyz_0theta, 
+                             elm, pts_area_fine, n_cluster = 2, sel_cluster = 1, elm_mask = 'Ti', 
+                             n_std = 2, fine_bbox = True, use_mask = False):
         self.checkPtsArea(pts_area_coarse, 'pts_area_coarse')
         self.checkPtsArea(pts_area_fine, 'pts_area_fine')
         self.checkOrgPos_0theta(orgPos_xyz_0theta, 'orgPos_xyz_0theta')
@@ -92,12 +99,13 @@ class bnpScan():
             else:
                 raise ValueError('Check input parameters for scans. It should be a list of angles\n')
                 
-        scandic = {'scanMode':'coarse_fine', 'elm':elm, 'smpInfo':sampleName,
+        scandic = {'scanMode':'coarse_fine', 'elm':elm, 'smpInfo':sampleName, 'BDAin': BDAin,
                    'coarse_fine':{'pts_area':pts_area_coarse, 'orgPos_xyz_0theta':orgPos_xyz_0theta,
                        'scans':scans, 'pre_parm':['pts_area', 'orgPos_xyz_0theta'],
                        'parm_label':['x_width', 'y_width', 'x_step', 'y_step', 'dwell', 
                                     'x_center_Rqs','y_center_Rqs', 'z_value_Rqs', 'tomo_rot_Rqs'],
-                       'find_bbox':True, 'fine_pts_area':pts_area_fine}}
+                       'find_bbox':True, 'fine_pts_area':pts_area_fine,
+                       'n_cluster':n_cluster, 'sel_cluster':sel_cluster, 'elm_mask':elm_mask, 'n_std':n_std,'use_mask':use_mask}}
         self.scandic = scandic
     
     def definePVs(self):
@@ -239,27 +247,33 @@ class bnpScan():
         caput(self.pvs['run'], 1)
         self.logger('%s: Scanning \n'%(self.getCurrentTime()))
         nlines = caget(self.pvs['tot_lines'])
-        tic = time.perf_counter()
+        tic = time.time()
         tic1 = tic
         logpvs = ['CryoCon1:In_3', 'CryoCon1:In_2', 'CryoCon3:In_2', 'CryoCon3:Loop_2', 'CryoCon1:In_1']
-        while caget(self.pvs['run']):
-            toc = time.perf_counter()
-            if (toc-tic1) >= 1:
-                msg = self.getCurrentTime() + ': '
-                cline = caget(self.pvs['cur_lines'])
-                msg += '%d, '%(cline)
-                for lpv in logpvs:
-                    msg += '%.3f, '%(caget(self.pvs[lpv]))
-                msg += '\n'
-                self.logger(msg)
-                tic1 = toc
-                
-            elif (toc-tic) >=10:
-#             time.sleep(10)
-                cline = caget(self.pvs['cur_lines'])
-                sys.stdout.write('Scanning %s (batch %d/%d): line %d/%d is done\n'\
-                                 %(scname, scidx+1, n_scns, cline, nlines))
-                tic = toc
+
+        with tqdm(total = nlines, desc = '%s (%d/%d)'%(scname, scidx, n_scns)) as pbar:
+            pbar.update(0)
+            
+            while caget(self.pvs['run']):
+                toc = time.time()
+#                 if (toc-tic1) >= 1:
+#                     msg = self.getCurrentTime() + ': '
+#                     cline = caget(self.pvs['cur_lines'])
+#                     msg += '%d, '%(cline)
+#                     for lpv in logpvs:
+#                         msg += '%.3f, '%(caget(self.pvs[lpv]))
+#                     msg += '\n'
+#                     self.logger_logbook_only(msg)
+#                     tic1 = toc
+
+                if (toc-tic) >=10:
+    #             time.sleep(10)
+                    cline = caget(self.pvs['cur_lines'])
+                    pbar.update(cline-pbar.n)
+#                     sys.stdout.write('Scanning %s (batch %d/%d): line %d/%d is done\n'\
+#                                      %(scname, scidx+1, n_scns, cline, nlines))
+                    tic = toc
+            pbar.update(nlines)
 
         self.logger('%s: Finish scan: %s%s'%(self.getCurrentTime(), scname, '\n'*3))
         self.blockBeamBDA()
@@ -303,16 +317,31 @@ class bnpScan():
         self.execScan(scname, scidx, n_scns)
         
     def coarseFineScanInit(self, params_label, params, scname, scidx, n_scns, scan_setting):
-        self.angleSweepScanInit(parm_labels, params, scname, scidx, n_scns)
+        self.angleSweepScanInit(params_label, params, scname, scidx, n_scns)
         
         # If find_bbox is on, perform image processing on the coarse scan to get coordinates
         if scan_setting['find_bbox']:
             cscan_path = os.path.join(self.userdir, 'img.dat/%s.h5'%(scname))
+            time_lim = 10  #sec
             self.fileReady(scname, cscan_path, time_lim)
             img_path = self.imgProgFolderCheck()   
             figpath = os.path.join(img_path, 'bbox_%s.png'%(scname))
-            new_x, new_y, new_w, new_h = getROIcoordinate(cscan_path, 
-                                                          self.scandic['elm'], figpath = figpath)
+            
+            if scan_setting['use_mask']:
+                maskmap = getElmMap(cscan_path, scan_setting['elm_mask'])[0]
+                mask = maskmap < (np.mean(maskmap) + scan_setting['n_std']*np.std(maskmap.ravel()))
+                m1 = getElmMap(cscan_path, self.scandic['elm'])
+                elmmap = m1[0] * mask
+                new_x, new_y, new_w, new_h = getROIcoordinate_data(elmmap, m1[1], m1[2],  
+                                                  n_cluster = scan_setting['n_cluster'],
+                                                  sel_cluster = scan_setting['sel_cluster'],
+                                                  figpath = figpath)
+            else:
+                new_x, new_y, new_w, new_h = getROIcoordinate(cscan_path, 
+                                                              self.scandic['elm'],
+                                                              n_cluster = scan_setting['n_cluster'],
+                                                              sel_cluster = scan_setting['sel_cluster'],
+                                                              figpath = figpath)
             f_scanparm = scan_setting['fine_pts_area']
             
 #             ##TODO: implement checkROIIntensity function
@@ -323,7 +352,9 @@ class bnpScan():
             if proceed:
                 self.logger('%.2f(width) \n %.2f(height)\n'%(new_w, new_h))
                 curr_smz = caget(self.pvs['z_value_Rqs'])
+                scan_ = params[-1]
                 params = []
+                f_scanparm = scan_setting['fine_pts_area']
                 params = f_scanparm + [scan_] + [new_x, new_y, curr_smz]
                 flabels = ['x_width', 'y_width', 'x_step', 'y_step', 'dwell', 'sm_rot_Rqs',
                               'x_center_Rqs','y_center_Rqs', 'z_value_Rqs']
@@ -341,10 +372,13 @@ class bnpScan():
 
         
     def nextScanName(self, scname):
-        scnumber = int(scname[7:11])
-        nextsc_str = str(scnumber+1).zfill(4)
-        nextscname = scname
-        nextscname = scname.replace(scname[7:11], nextsc_str)
+        nextscname = '0000'
+        if len(scname) > 0:
+            scnumber = int(scname[7:11])
+            nextsc_str = str(scnumber+1).zfill(4)
+            nextscname = scname
+            nextscname = scname.replace(scname[7:11], nextsc_str)
+            
         return nextscname
         
         
@@ -392,7 +426,7 @@ class bnpScan():
             elif scan_mode == 'batchXRF_fixAngle':
                 self.batchXRFInit(parm_labels, params, next_sc, scan_idx, len(scans))
             else:
-                status = self.angleSweepScanInit(parm_labels, params, next_sc, 
+                status = self.coarseFineScanInit(parm_labels, params, next_sc, 
                                                  scan_idx, len(scans), scan_setting)
                 
             if status == -1:

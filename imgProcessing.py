@@ -23,11 +23,27 @@ def estShifts(refSc, currSc, fpath, elm):
     plt.title('x_shift_um:%.2f, y_shift_um:%.2f, x_shift_pixel:%d, y_shift_pixel:%d'%(ss_x, ss_y, s1, s2))
     return ss_x, ss_y, fig
 
-def getROIcoordinate(fname, elm, savefig = True, figpath = None):
+def getROIcoordinate(fname, elm, savefig = True, figpath = None, n_cluster = 2, sel_cluster = 1):
     elmmap, x_pos, y_pos = getElmMap(fname, elm)
-    n_cluster = 2
     kmeanMap = kmean_analysis(n_cluster,elmmap, 42, plotoption = True)
-    region_prop = regionprops(kmeanMap[0])
+    region_prop = regionprops(np.array(kmeanMap[0]==sel_cluster, dtype='int'))
+    region_bbox = region_prop[0].bbox
+    fig = plotBBox(elmmap, region_bbox, x_pos, y_pos)
+        
+    width = x_pos[region_bbox[3]-1]- x_pos[region_bbox[1]]
+    height = y_pos[region_bbox[2]-1]- y_pos[region_bbox[0]]
+    
+    new_x = (x_pos[region_bbox[3]-1]- x_pos[region_bbox[1]])/2 + x_pos[region_bbox[1]]
+    new_y = (y_pos[region_bbox[2]-1]- y_pos[region_bbox[0]])/2 + y_pos[region_bbox[0]]
+    
+    if savefig:
+        fig.savefig(figpath, dpi=100, transparent=True)
+        
+    return new_x, new_y, width, height
+
+def getROIcoordinate_data(elmmap, x_pos, y_pos, savefig = True, figpath = None, n_cluster = 2, sel_cluster = 1):
+    kmeanMap = kmean_analysis(n_cluster,elmmap, 42, plotoption = True)
+    region_prop = regionprops(np.array(kmeanMap[0]==sel_cluster, dtype='int'))
     region_bbox = region_prop[0].bbox
     fig = plotBBox(elmmap, region_bbox, x_pos, y_pos)
         
