@@ -79,6 +79,10 @@ class pvComm():
         self.pvs['x_motorMode'].pv.put(0)
         self.pvs['y_motorMode'].pv.put(0)
         
+    def changeXtoCombinedMode(self):        
+        self.logger('%s; Changing XY scan mode to combined motion\n'%(getCurrentTime()))
+        self.pvs['x_motorMode'].pv.put(0) 
+        
     def changeXtoPiezolMode(self):
         self.logger('%s: Changing X scan mode to Piezo only\n'%(getCurrentTime()))
         self.pvs['x_motorMode'].pv.put(2)
@@ -92,7 +96,9 @@ class pvComm():
     def centerPiezoXY(self):
         self.logger('%s: Centering piezoX and piezoY.\n'%(getCurrentTime()))
         self.pvs['piezo_xCenter'].pv.put(1)
+        time.sleep(1)
         self.pvs['piezo_yCenter'].pv.put(1)
+        time.sleep(1)
     
     def assignPosValToPVs(self, pvstr, pvval):
         for s_, v_ in zip(pvstr, pvval):

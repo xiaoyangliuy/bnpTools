@@ -13,7 +13,8 @@ from scanList import scanList
 from pvComm import pvComm
 from scanBNP import xrfSetup, scanStart, scanFinish, getCoordinate
 from logger import stdoutToTextbox
-import time
+import time, datetime
+import pandas as pd
 
 class scanFrame():
     
@@ -34,6 +35,7 @@ class scanFrame():
         self.record, self.recordval = self.slist.searchQueue()
         if self.record is not None:
             self.slist.pbarInit()
+            self.scan_start_time = 0
             self.scdic = {u:self.recordval[i] for i, u in enumerate(self.slist.sclist_col)}
             self.scdic.update({'bda':float(self.bda.get())})
             self.checkUserDir()
@@ -95,6 +97,7 @@ class scanFrame():
             self.motorReady = 0
             self.pbarscval.set(1)
             self.slist.pbarInit()
+            self.scan_start_time = 0
             self.scandone_var.set(False)
     
     def scanExec(self):
@@ -143,16 +146,34 @@ class scanFrame():
                 
             elif self.scanning:
                 self.monitormsg.set('scanning')
-                cline = self.pvComm.pvs['cur_lines'].pv.value
-                tline = self.pvComm.pvs['tot_lines'].pv.value
-                self.pbarscmsg.set('%s [%d / %d]'%(self.recordval[0],
-                                   cline, tline))
-                self.pbarscval.set(cline/tline*100)
+                if self.scan_start_time == 0:
+                    self.scan_start_time = datetime.datetime.now()
+                self.pbarUpdate()
+                self.checkDetectorStatus()
+                self.monitormsg.set('Scanning... will be done at: %s'%self.eta_str)
+                
                 if self.pvComm.pvs['run'].pv.value == 0:
                     self.scanning = False
                     self.scandone_var.set(True)
                 
         self.mmsg_label.after(ms, self.scanMonitor)
+
+    def pbarUpdate(self):
+        cline = self.pvComm.pvs['cur_lines'].pv.value
+        tline = self.pvComm.pvs['tot_lines'].pv.value
+        time_delta = datetime.datetime.now() - self.scan_start_time
+        timePerLine = (time_delta.seconds) / float((cline+1))
+        remain_st = timePerLine*(tline-cline)
+        eta_time = pd.Timestamp.now() + pd.DateOffset(minutes = self.slist.getTotalTime(remaining_st=remain_st))
+        self.eta_str = eta_time.strftime('%Y-%m-%d %X')
+        self.pbarscmsg.set('%s [%d / %d] %.1f %%remaining' % (self.recordval[0],
+                           cline, tline, 100-cline/tline*100))
+        self.pbarscval.set(cline/tline*100)
+        
+    def checkDetectorStatus(self):
+        pass
+        # if wait flag is on, skip and do nothing
+        
 
     def pauseClick(self):
         print('Pause scan thread pressed')
@@ -223,6 +244,8 @@ class scanFrame():
         self.bda = setup_tab.bda
         self.tot_time = setup_tab.tot_time
         self.scanParms = setup_tab.scanParms
+        self.scan_start_time = 0
+        self.eta_str = ''
         self.slist = scanList(self.scanfrm, self.inputs_labels, self.calctime_out,
                  self.scanType, self.smp_name, self.bda, self.tot_time, self.scanParms)
         self.insertScan = self.slist.insertScan

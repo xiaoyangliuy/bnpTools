@@ -34,13 +34,14 @@ def xrfSetup(pvComm, scandic):
 
 def scanStart(pvComm, bda):
     pvComm.setXYcenter()
-    pvComm.changeXtoPiezolMode()
     pvComm.centerPiezoXY()
+    pvComm.centerPiezoXY()
+    pvComm.changeXtoPiezolMode()
     pvComm.openBeamBDA(bda)
 
 def scanFinish(pvComm, bda):
     pvComm.blockBeamBDA(bda)
-    pvComm.changeXYcombinedMode()
+    pvComm.changeXtoCombinedMode()
     
 def fileReady(coarse_sc, fdir, tlim = 30):
     fpath = os.path.join(fdir, 'img.dat/%s.h5'%(coarse_sc))
