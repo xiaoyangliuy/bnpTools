@@ -23,7 +23,9 @@ def xrfSetup(pvComm, scandic):
     pvComm.blockBeamBDA(scandic['bda'])
     pvComm.changeXYcombinedMode()
     pvComm.assignPosValToPVs(parm_label, parm_value)
-    
+    return getMotorList(scandic)
+
+def getMotorList(scandic):
     p = ['target_theta', 'z_scan', 'y_scan', 'x_scan']
     motorlabel = ['sm_rot', 'z_value', 'y_center', 'x_center']
     mtolerance = [0.1, 0.5, 0.1, 0.1]
@@ -32,16 +34,15 @@ def xrfSetup(pvComm, scandic):
         mlist.append((ml_, float(scandic[p_]), mt_))
     return mlist
 
+
 def scanStart(pvComm, bda):
-    pvComm.setXYcenter()
-    pvComm.centerPiezoXY()
-    pvComm.centerPiezoXY()
     pvComm.changeXtoPiezolMode()
     pvComm.openBeamBDA(bda)
 
 def scanFinish(pvComm, bda):
     pvComm.blockBeamBDA(bda)
     pvComm.changeXtoCombinedMode()
+    time.sleep(0.5)
     
 def fileReady(coarse_sc, fdir, tlim = 30):
     fpath = os.path.join(fdir, 'img.dat/%s.h5'%(coarse_sc))

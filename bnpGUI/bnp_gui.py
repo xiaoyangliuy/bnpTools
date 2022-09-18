@@ -22,7 +22,7 @@ class MainWindow(tk.Frame):
 if __name__ == "__main__":
     root = tk.Tk()
     gui = MainWindow(root)
-    root.geometry('1300x760')
+    root.geometry('1330x760')
     root.resizable(False, False)
     root.mainloop()
 

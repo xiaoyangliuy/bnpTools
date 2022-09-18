@@ -78,28 +78,29 @@ class scanList(object):
         
         
     def insertScan(self):
-        try:
-            sctime = float(self.calctime_out['text'])
-            if sctime > 0.0:
-                if self.scanType.get() == 'XRF':
-                    scprm_theta0 = [len(self.scanParms[i+'_theta0'].get()) for i in ['x', 'y', 'z']]
-                    if not all(scprm_theta0):
-                        self.insertParmEntry()
-                    else:
-                        self.insertParmEntry(theta=float(self.scanParms['target_theta'].get()))
+        sctime = float(self.calctime_out['text'])
+        if (sctime > 0.0) & (self.scanParms['target_theta'].get() != ''):
+            if self.scanType.get() == 'XRF':
+                scprm_theta0 = [len(self.scanParms[i+'_theta0'].get()) for i in ['x', 'y', 'z']]
+                if not all(scprm_theta0):
+                    self.insertParmEntry()
                 else:
-                    t_min = float(self.scanParms['theta_min'].get())
-                    t_inc = float(self.scanParms['theta_inc'].get())
-                    t_max = float(self.scanParms['theta_max'].get()) + t_inc
-                    angles = np.arange(t_min, t_max, t_inc)
+                    self.insertParmEntry(theta=float(self.scanParms['target_theta'].get()))
+            elif self.scanType.get() == 'Coarse-Fine (Fixed Angle)':
+                self.insertParmEntry()
+            else:
+                t_min = float(self.scanParms['theta_min'].get())
+                t_inc = float(self.scanParms['theta_inc'].get())
+                t_max = float(self.scanParms['theta_max'].get()) + t_inc
+                angles = np.arange(t_min, t_max, t_inc)
+                
+                for a in angles:
+                    self.insertParmEntry(theta=a)
                     
-                    for a in angles:
-                        self.insertParmEntry(theta=a)
-                        
             self.tot_time.set('%.3f'%(self.getTotalTime()))
             eta_dt = pd.Timestamp.now() +pd.DateOffset(minutes = self.getTotalTime())
             self.tot_time.set('%s'%(eta_dt.strftime('%Y-%m-%d %X')))
-        except (ValueError):
+        else:
             print('Scan not added, scan parameters invalid')     
    
     def insertParmEntry(self, theta = None):
@@ -144,6 +145,26 @@ class scanList(object):
                     self.scanidx += 1
             except:
                 print('Scan not added, no xyz (theta0) found')   
+        elif self.scanType.get() == 'Coarse-Fine (Fixed Angle)':
+            sctype = ['Coarse', 'Fine']
+            for i in sctype:  
+                if i == 'Fine':
+                    dlabels = ['width', 'height', 'w_step', 'h_step', 'dwell']
+                    slabels = ['width_fine', 'height_fine', 'w_step_fine', 'h_step_fine', 'dwell_fine'] 
+                    
+                    for d_, s_ in zip(dlabels, slabels):
+                        scanparm[d_] = scanparm[s_]
+                    
+                    for s in ['x_scan', 'y_scan']:
+                        scanparm[s] = ''
+                        
+                # scanparm['target_theta'] = theta
+                scanparm['scanType'] = i
+                sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
+                self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
+                                   text='', values=tuple(sparm))
+                self.scanidx += 1
+            
         else:
             sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
             self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,

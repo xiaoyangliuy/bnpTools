@@ -11,7 +11,7 @@ from tkinter import ttk
 from scanList import scanList
 #from bnpScan import bnpScan, 
 from pvComm import pvComm
-from scanBNP import xrfSetup, scanStart, scanFinish, getCoordinate, getMotorList
+from scanBNP import xrfSetup, scanStart, scanFinish, getCoordinate
 from logger import stdoutToTextbox
 import time, datetime
 import pandas as pd
@@ -34,7 +34,6 @@ class scanFrame():
     def scanSetup(self):
         self.record, self.recordval = self.slist.searchQueue()
         if self.record is not None:
-            self.pause_btn['state'] = tk.NORMAL
             self.slist.pbarInit()
             self.scan_start_time = 0
             self.scdic = {u:self.recordval[i] for i, u in enumerate(self.slist.sclist_col)}
@@ -57,7 +56,6 @@ class scanFrame():
         else:
             self.scanclick = False
             self.scan_btn['state'] = tk.NORMAL
-            self.pause_btn['state'] = tk.DISABLED
             self.monitormsg.set('Not scanning, not active')
         
     
@@ -89,19 +87,7 @@ class scanFrame():
             if mready == 1:
                 self.motors.pop(0)
         else:
-            self.pvComm.setXYcenter()
-            self.pvComm.centerPiezoXY()
-            time.sleep(0.5)
-            self.pvComm.centerPiezoXY()
-            time.sleep(0.5)
-            xztp_ready = self.pvComm.motorReady_XZTP()
-            motor_diff = self.pvComm.sumMotorDiff(getMotorList(self.scdic))
-            print('Motor difference: %.2f'%(motor_diff))
-            MOTOR_DIFF_MIN = 0.5
-            if (xztp_ready) & (motor_diff < MOTOR_DIFF_MIN):
-                self.motorReady = 1
-            else:
-                self.motors = getMotorList(self.scdic)
+            self.motorReady = 1
     
     def scanDone(self, *args, **kwargs):
         if self.scandone_var.get():
@@ -116,26 +102,18 @@ class scanFrame():
     
     def scanExec(self):
         scanStart(self.pvComm, float(self.bda.get()))
-        # if status:
-        self.pbarscval.set(0.0)
-        self.monitormsg.set('Motor ready')
         time.sleep(0.5)
-        self.pending = False
         self.monitormsg.set('scanning')
         self.recordval[1] = 'scanning'
         self.updateRecord()
         self.pvComm.pvs['run'].pv.put(1)
         self.scanning = True
-        # else:
-        #     # self.monitormsg.set('Fail to center XY piezo motors... tyring again')
-        #     print('Fail to center XY piezo motors... batch scan paused... check piezo motors')
-        #     self.pauseClick()
 
     def scanMonitor(self, *args, **kwargs):
         ms = 1000
         
         if self.pause & self.scanning:
-            if self.pvComm.pvs['wait_val'].pv.value == 0:
+            if self.pvComm.pvs['wait'].pv.value == 0:
                 self.pvComm.scanPause()
                 self.monitormsg.set('Scan Pause with 1 wait flag, waiting for current line to finish')
                 
@@ -158,6 +136,9 @@ class scanFrame():
                 elif not self.motorReady:
                     self.checkMotorReady()
                 else:
+                    self.pbarscval.set(0.0)
+                    self.monitormsg.set('Motor ready')
+                    self.pending = False
                     self.scanExec()
                         
             elif self.scanclick & (not self.pending) & (not self.scanning):
@@ -170,10 +151,8 @@ class scanFrame():
                     if self.scan_start_time == 0: 
                         self.scan_start_time = datetime.datetime.now()
                         self.det_reset_attemp = 0
-                        self.cline = 0
                     self.pbarUpdate()
                     self.checkDetectorStatus()
-                    self.logTempPV()
                     self.monitormsg.set('Scanning... will be done at: %s'%self.eta_str)
                 else:
                     self.monitormsg.set('scan is paused or has started yet... check end station shutter')
@@ -183,10 +162,6 @@ class scanFrame():
                     self.scandone_var.set(True)
                 
         self.mmsg_label.after(ms, self.scanMonitor)
-        
-    def logTempPV(self):
-        if self.logTemp.get():
-            self.pvComm.logCryoTemp()
 
     def pbarUpdate(self):
         cline = self.pvComm.pvs['cur_lines'].pv.value
@@ -221,7 +196,7 @@ class scanFrame():
                 self.pvComm.scanPause()
                 det_reset_status = self.pvComm.resetDetector()
                 if det_reset_status < 0: self.pvComm.resetDetector()
-                if self.pvComm.pvs['wait'].pv.value > 0: self.pvComm.scanResume()
+                self.pvComm.scanResume()
                 self.det_reset_attemp += 1
     
             elif self.det_reset_attemp > 5:
@@ -241,47 +216,37 @@ class scanFrame():
         
     def resumeClick(self):
         print('Resume scan thread pressed')
-        self.pause_btn['state'] = tk.NORMAL
         self.resume_btn['state'] = tk.DISABLED
-        self.abort_btn['state'] = tk.DISABLED
-        self.abortall_btn['state'] = tk.DISABLED
+        self.pause_btn['state'] = tk.NORMAL
         self.pause = False
-
-        if self.scanning:
+        
+        if self.abortsingle:
+            self.abortsingle = False
+        elif self.scanning:
             self.pvComm.scanResume()
-
+            self.abort_btn['state'] = tk.DISABLED
+            self.abortall_btn['state'] = tk.DISABLED
+#        self.batchthread.resume()
     
     def abortSingleClick(self):
-        print('Abort single clicked, aborting current scan')
+        print('Abort single clicked')
         self.abort_btn['state'] = tk.DISABLED
-        self.resume_btn['state'] = tk.DISABLED
-        self.abortall_btn['state'] = tk.DISABLED
-        self.pause = False
-        self.pause_btn['state'] = tk.NORMAL
-        # self.abortsingle = True
+        self.abortsingle = True
         if self.scanning:
             self.pvComm.scanAbort()
             self.pvComm.scanResume()
             self.scanning = False
             self.scandone_var.set(True)
+        else:
             self.recordval[1] = 'abort'
             self.updateRecord()
-        elif (not self.scanning) & (not self.abortall):
-            self.recordval[1] = 'abort'
-            self.updateRecord()
-            self.pending = False
-            self.scanSetup()
-
-        # else:
-
-
     
     def abortAllClick(self):
         print('Abort all clicked')
-        self.abortall = True
-        self.abortSingleClick()
-
-        self.abortall = False
+        
+        if not self.abortsingle:
+            self.abortSingleClick()
+        self.abortsingle = False
         self.scanclick = False
         self.pending = False
         self.coordsReady = 0
@@ -289,9 +254,17 @@ class scanFrame():
         self.pause = False
         self.abortall_btn['state'] = tk.DISABLED
         self.scan_btn['state'] = tk.NORMAL
-        self.pause_btn['state'] = tk.DISABLED
     
 
+            
+    def abortClick(self):
+        self.recordval[1] = 'aborted'
+        self.sclist.item(self.record, text = '', values = tuple(self.recordval))
+        pass
+        # thread abort, wait for thread to come back before exiting?
+        # two options, abort the current scan or absort all?
+        # make sense to absort all? easily click scan to restart the queue
+   
     
     def __init__(self, tabControl, setup_tab):
         self.scanfrm = ttk.Frame(tabControl)
@@ -352,11 +325,20 @@ class scanFrame():
                              sticky = 'w')
         
         self.detectorMonitor = tk.IntVar()
-        self.detectorMonitor.set(0)
+        self.detectorMonitor.set(1)
         detMonitor_btn = ttk.Checkbutton(
             master=self.scanfrm, text='Detector Monitor', variable=self.detectorMonitor)
-        detMonitor_btn.grid(row=24, column=5)
+        detMonitor_btn.grid(row=24, column=5, padx=(20,0))
         
+        # self.scanType.set("XRF")
+        # scantype = ["XRF", "Angle Sweep", "Coarse-Fine"]
+        # padx = [(0, 100), (0, 100), (0, 100)]
+        # self.row += 1
+        # for i, s in enumerate(scantype):
+        #     a = ttk.Radiobutton(
+        #         master=self.setupfrm, text=s, variable=self.scanType, value=s
+        #     )
+        #     a.grid(row=self.row, column=self.col + i, padx=padx[i])
         
         self.scmsg = tk.Text(self.scanfrm, wrap = 'word', height = 15, width = 152)
         self.scmsg.grid(row = 24, column = 1, sticky = 'w', columnspan = 5, 
@@ -375,7 +357,6 @@ class scanFrame():
         
         self.pause_btn = tk.Button(self.scanfrm, text = 'Pause', command = self.pauseClick, width = 20)
         self.pause_btn.grid(row=row+3, column=0, sticky = 'w', pady = (15, 0), padx=(20,0))
-        self.pause_btn['state'] = tk.DISABLED
         
         self.resume_btn = tk.Button(self.scanfrm, text = 'Resume', command = self.resumeClick, width = 20)
         self.resume_btn.grid(row =row+4, column = 0, sticky = 'w', pady = (15, 0), padx=(20,0))
@@ -392,7 +373,7 @@ class scanFrame():
         self.logTemp = tk.IntVar()
         logTemp_chckbx = tk.Checkbutton(self.scanfrm, text = 'Log Temperature',
                                         variable = self.logTemp, width = 20)
-        logTemp_chckbx.grid(row =24, column = 5, padx=(300,0))
+        logTemp_chckbx.grid(row =row+7, column = 0, sticky = 'w', pady = (15, 0), padx=(20,0))
         
         try:
             self.mmsg_label.after(1000, self.scanMonitor)
