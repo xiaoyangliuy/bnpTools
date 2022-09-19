@@ -60,7 +60,7 @@ class setupFrame:
         except (AttributeError, ValueError):
             pass
 
-        t_diff = 60
+        t_diff = 10
         fmtime = os.path.getmtime(self.h5_filename)
         ctime = time.time()
         if (ctime - fmtime) >= t_diff:
@@ -81,12 +81,18 @@ class setupFrame:
                 self.y = self.h5["/MAPS/y_axis"][()]
                 pvlist = self.h5["/MAPS/extra_pvs"][0].astype(str).tolist()
                 pvval = self.h5["/MAPS/extra_pvs"][1].astype(str).tolist()
-                self.file_z = float(
-                    pvval[pvlist.index(self.pvComm.pvs["z_value_Act"].pv.pvname)]
-                )
-                self.file_theta = float(
-                    pvval[pvlist.index(self.pvComm.pvs["sm_rot_Act"].pv.pvname)]
-                )
+                if len(pvlist) < 5:
+                    self.file_z = None
+                    self.file_theta = None
+                
+                else:
+                    self.file_z = float(
+                        pvval[pvlist.index(self.pvComm.pvs["z_value_Act"].pv.pvname)]
+                    )
+                    self.file_theta = float(
+                        pvval[pvlist.index(self.pvComm.pvs["sm_rot_Act"].pv.pvname)]
+                    )
+                
                 self.Image2D = self.Axe2D.imshow(
                     elmScalers[i_det],
                     aspect="equal",
@@ -94,13 +100,17 @@ class setupFrame:
                     cmap="inferno",
                     origin="lower",
                     #                                                 extend = (np.min(self.x),np.max(self.x), np.min(self.y), np.max(self.y)),
-                    norm=colors.LogNorm()
+                    norm=colors.SymLogNorm(linthresh=0.5)
                     if self.log_button.config("relief")[-1] == "sunken"
                     else colors.Normalize(),
                 )
                 self.Canvas2D.draw()
-                self.openfilemsg.set("%s is open" % self.h5_filename)
-                self.open_msg_label.config(fg="green")
+                if self.file_z is None:
+                    self.openfilemsg.set("Samz PV not found %s" % self.h5_filename)
+                    self.open_msg_label.config(fg="red")
+                else:
+                    self.openfilemsg.set("%s is open" % self.h5_filename)
+                    self.open_msg_label.config(fg="green")
             except:
                 self.openfilemsg.set("Having trouble opening %s" % self.h5_filename)
                 self.open_msg_label.config(fg="red")
@@ -115,7 +125,8 @@ class setupFrame:
         )
         self.Image2D.set_array(np.array(elmScalers[i_det]))
         if self.log_button.config("relief")[-1] == "sunken":
-            self.Image2D.set_norm(colors.LogNorm())
+            # self.Image2D.set_norm(colors.LogNorm())
+            self.Image2D.set_norm(colors.SymLogNorm(linthresh=0.5))
         else:
             self.Image2D.set_norm(colors.Normalize())
         self.Canvas2D.draw()
@@ -126,7 +137,7 @@ class setupFrame:
             self.Image2D.set_norm(colors.Normalize())
         else:
             self.log_button.config(relief="sunken")
-            self.Image2D.set_norm(colors.LogNorm())
+            self.Image2D.set_norm(colors.SymLogNorm(linthresh=0.5))
         self.Canvas2D.draw()
 
     def Draw_Rectangle(self, xmin, xmax, ymin, ymax, color, lw=2, animated=False):
@@ -143,11 +154,6 @@ class setupFrame:
         self.Axe2D.add_patch(Rectangle)
         return Rectangle
 
-    #    def Draw_Dot(self, xcorr, ycorr, animated=False):
-    #        Dot = patches.Circle((xcorr, ycorr), color = 'w', alpha = 0.5,
-    #                             radius = 1, animated=animated)
-    #        self.Axe2D.add_patch(Dot)
-    #        return Dot
 
     def Canvas2D_Button_Pressed(self, event):
         self.xstart, self.ystart = list(
@@ -273,23 +279,32 @@ class setupFrame:
         y_scan = np.round((self.y[self.ystart] + self.y[self.yend]) / 2, 2)
         width = abs(self.x[self.xstart] - self.x[self.xend])
         height = abs(self.y[self.ystart] - self.y[self.yend])
-        z_scan = np.round(self.file_z, 2)
-        target_theta = self.file_theta
-        slabel = ["x_scan", "y_scan", "width", "height", "z_scan", "target_theta"]
-        for s in slabel:
-            self.scanParms[s].delete(0, tk.END)
-            self.scanParms[s].insert(0, "%.2f" % (eval(s)))
-
-        slabel = ["x_theta0", "y_theta0", "z_theta0"]
-        if (self.file_theta ** 2) < 1e-3:
-            svlabel = ["x_scan", "y_scan", "z_scan"]
+        if self.file_z is not None:    
+            z_scan = np.round(self.file_z, 2)
+            target_theta = self.file_theta
+            slabel = ["x_scan", "y_scan", "width", "height", "z_scan", "target_theta"]
+            for s in slabel:
+                self.scanParms[s].delete(0, tk.END)
+                self.scanParms[s].insert(0, "%.2f" % (eval(s)))
+    
+            slabel = ["x_theta0", "y_theta0", "z_theta0"]
+            if (self.file_theta ** 2) < 1e-3:
+                svlabel = ["x_scan", "y_scan", "z_scan"]
+            else:
+                e = ""
+                svlabel = ["e"] * 3
+    
+            for s_, sv_ in zip(slabel, svlabel):
+                self.scanParms[s_].delete(0, tk.END)
+                self.scanParms[s_].insert(0, "%s" % (str(eval(sv_))))
         else:
-            e = ""
-            svlabel = ["e"] * 3
-
-        for s_, sv_ in zip(slabel, svlabel):
-            self.scanParms[s_].delete(0, tk.END)
-            self.scanParms[s_].insert(0, "%s" % (str(eval(sv_))))
+            slabel = ["x_scan", "y_scan", "width", "height"]
+            for s in slabel:
+                self.scanParms[s].delete(0, tk.END)
+                self.scanParms[s].insert(0, "%.2f" % (eval(s)))
+            flabel = ['z_scan', 'target_theta', 'x_theta0', 'y_theta0', 'z_theta0']
+            for f in flabel: 
+                self.scanParms[f].delete(0, tk.END)
 
     def checkEntryDigit(self, P):
         if (P == "") | (P == "-"):
@@ -465,19 +480,19 @@ class setupFrame:
             self.setupfrm, text="1. Choose a type of scan below:"
         )
         self.scantype_txt.grid(
-            row=self.row, column=self.col, padx=(0, 400), columnspan=8
+            row=self.row, column=self.col, padx=(0, 400), columnspan=10
         )
 
         self.scanType = tk.StringVar(self.setupfrm)
         self.scanType.set("XRF")
-        scantype = ["XRF", "Angle Sweep", "Coarse-Fine"]
-        padx = [(0, 100), (0, 100), (0, 100)]
+        scantype = ["XRF",'Coarse-Fine (Fixed Angle)', "Angle Sweep", "Coarse-Fine"]
+        padx = [(18, 10), (0, 10), (0, 10), (0, 10)]
         self.row += 1
         for i, s in enumerate(scantype):
             a = ttk.Radiobutton(
-                master=self.setupfrm, text=s, variable=self.scanType, value=s
+                master=self.setupfrm, text=s, variable=self.scanType, value=s,
             )
-            a.grid(row=self.row, column=self.col + i, padx=padx[i])
+            a.grid(row=self.row, column=self.col + i, padx=padx[i], stick='w')
 
         self.row += 1
         self.inserttype_txt = tk.Label(

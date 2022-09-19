@@ -51,6 +51,37 @@ class pvComm():
         
     def scanAbort(self):
         self.pvs['abort'].put_callback(1)
+        
+    def resetDetector(self):
+        print('check netCDF status: current status is %s'%(self.pvs['netCDF_status'].pv.get(as_string=True)))
+        if self.pvs['netCDF_status'].pv.get(as_string=True) == 'Writing':
+            print('Save current netCDF data and stop file write')
+            self.pvs['netCDF_save'].pv.put(1)
+            time.sleep(0.1)
+            self.pvs['netCDF_stp'].pv.put(1)
+        self.pvs['mcs_stp'].pv.put(1)
+        self.pvs['xmap_stp'].pv.put(1)
+        time.sleep(0.2)
+        if self.detectorDone():
+            self.scanResume()
+            return 1
+        else:
+            return -1
+        
+    def logCryoTemp(self):
+        temp_pv = ['CryoCon1:In_1', 'CryoCon1:In_2', 'CryoCon1:In_3', 'CryoCon3:In_2', 'CryoCon3:Loop_2']
+        s = ['%s: %.2f'%(t, self.pvs[t].pv.value) for t in temp_pv]
+        s = ', '.join(s)
+        msg = getCurrentTime() + ': ' + s + '\n'
+        self.logger('%s'%msg)
+
+    def detectorDone(self):
+        xmap_done = self.pvs['xmap_status'].pv.value
+        mcs_done = self.pvs['mcs_status'].pv.value
+        if all([not xmap_done, not mcs_done]):
+            return False
+        else:
+            return True
     
     def changeTomoRotate(self, theta):
         curr_angle = np.round(self.pvs['tomo_rot_Act'].pv.value, 2)
@@ -90,15 +121,66 @@ class pvComm():
     def setXYcenter(self):
         self.logger('%s: Update the current position as the center of'\
                     'the scan.\n'%(getCurrentTime()))
-        self.pvs['x_setcenter'].pv.put(1)
-        self.pvs['y_setcenter'].pv.put(1)
+        x_rqs = self.pvs['x_center_Rqs'].pv.get()
+        y_rqs = self.pvs['y_center_Rqs'].pv.get()
+        self.pvs['x_updatecenter'].pv.put(round(x_rqs, 2))
+        self.pvs['y_updatecenter'].pv.put(round(y_rqs, 2))
+        self.logger('%s: X_center valute: %.2f \n'%(getCurrentTime(), x_rqs))
+        self.logger('%s: Y_center valute: %.2f \n'%(getCurrentTime(), y_rqs))
+        # self.pvs['x_setcenter'].pv.put(1)
+        # self.pvs['y_setcenter'].pv.put(1)
         
+    def motorReady_XZTP(self):
+        status = self.pvs['xztp_motor_ready'].pv.get(as_string=True)
+        ready = 1 if status == 'Ready' else 0
+        return ready
+        
+    def sumMotorDiff(self, motorlist):
+        sum_diff = 0
+        for m in motorlist:
+            sum_diff += abs(self.pvs['%s_Rqs'%m[0]].pv.get() - self.pvs['%s_Act'%m[0]].pv.get())
+        return sum_diff
+    
+    
     def centerPiezoXY(self):
+        MAX_WAIT_TIME = 5  #sec
         self.logger('%s: Centering piezoX and piezoY.\n'%(getCurrentTime()))
         self.pvs['piezo_xCenter'].pv.put(1)
-        time.sleep(1)
         self.pvs['piezo_yCenter'].pv.put(1)
-        time.sleep(1)
+        self.logger('%s: Piezo xcenter value: %.2f\n'%(getCurrentTime(), self.pvs['x_piezo_val'].pv.get()))
+        self.logger('%s: Piezo ycenter value: %.2f\n'%(getCurrentTime(), self.pvs['y_piezo_val'].pv.get()))
+        tin = time.time()
+        t_diff = 0
+        while (not self.motorReady_XZTP()) & (t_diff < MAX_WAIT_TIME):
+            self.logger('%s: Waiting for XZTPX to be ready.\n'%(getCurrentTime()))
+            t_diff = time.time() - tin
+            time.sleep(0.2)
+        
+        return self.motorReady_XZTP()
+        
+        # MAX_WAIT_TIME = 2  #sec
+        # t_diff = 0
+        # tin = time.time()
+        
+        # while (self.pvs['xztp_motor_ready'].pv.get(as_string=True) != 'Ready') & (t_diff < MAX_WAIT_TIME):
+        #     self.logger('%s: Waiting for piezoX.\n'%(getCurrentTime()))
+        #     time.sleep(0.2)
+        #     t_diff = time.time() - tin
+        # x_status = 1 if self.pvs['xztp_motor_ready'].pv.get(as_string=True) == 'Ready' else 0
+        # print(x_status)
+            
+        # self.pvs['piezo_yCenter'].pv.put(1)
+        # t_diff = 0
+        # tin = time.time()
+        # while (self.pvs['y_motor_ready'].pv.get(as_string=True) != 'Ready') & (t_diff < MAX_WAIT_TIME):
+        #     self.logger('%s: Waiting for piezoY.\n'%(getCurrentTime()))
+        #     time.sleep(0.2)
+        #     t_diff = time.time() - tin
+        # y_status = 1 if self.pvs['y_motor_ready'].pv.get(as_string=True) == 'Ready' else 0
+        # print(y_status)
+        
+        # return x_status * y_status
+
     
     def assignPosValToPVs(self, pvstr, pvval):
         for s_, v_ in zip(pvstr, pvval):
