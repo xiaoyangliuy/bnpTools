@@ -10,6 +10,15 @@ import pandas as pd
 sys.path.append('/home/beams11/USERBNP/scripts/roehrig/CoordinateTransforms/src')
 from Transform import XZT_Transform
 
+def checkEntryDigit(P):
+    if (P == "") | (P == "-"):
+        return True
+    try:
+        float(P)
+        return True
+    except:
+        return False
+
 def coordinate_transform(angle, x, y, z):
     xzt_tform = XZT_Transform()
     xzt_tform.transform_drives(0,0,0,z,x,y,True,False)

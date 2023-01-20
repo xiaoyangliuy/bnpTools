@@ -6,24 +6,58 @@ Created on Wed Oct 27 10:28:14 2021
 Create and get PVobjects
 
 """
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
 
-import epics, sys
+import epics, sys, datetime
 import numpy as np
 from misc import getCurrentTime
+import epics.devices
+from epics import caput, caget
+
+# Eiger object is create for accessing camera related attributes
+class eiger(object):
+    def __init__(self, cam_pv_str, file_pv_str):
+        self.pvstr = cam_pv_str
+        self.cam = epics.devices.AD_Camera(cam_pv_str)
+        self.fileIO = epics.devices.AD_FilePlugin(file_pv_str)
+        
+    def setNumTriggers(self, numTriggers):
+        caput('%sNumTriggers'%self.pvstr, numTriggers)
+    
+    def getNumTriggers(self):
+        return caget('%sNumTriggers'%self.pvstr)
+
 
 class pvObject(object):
-    
-    def __init__(self, pv_str, pv_key):
+    def __init__(self, pv_str, pv_key, onchange_callback=False):
         self.pv = epics.PV(pv_str)
         self.pvname = pv_key
         self.putvalue = self.pv.value
         self.put_complete = 0
         self.motor_ready = 1
+        self.time_pre = None    #datetime of PV when connected or previous value change
+        self.time_delta = 0    #time difference in sec btw its value change
+        if onchange_callback:
+            self.pv.add_callback(self.onChanges)
+        
             
     def onPutComplete(self, pvname=None,  **kws):
         sys.stdout.write('%s: Finish updating PV %s with value of %s\n'\
                           %(getCurrentTime(), self.pvname, str(self.putvalue)))
         self.put_complete = 1
+        
+    def onChanges(self, pvname=None, **kws):
+            
+        if self.time_pre is None: 
+            self.time_pre = datetime.datetime.now()
+        else:
+            curtime = datetime.datetime.now()
+            self.time_delta = (curtime-self.time_pre).seconds
+            self.time_pre = curtime
+            
+        sys.stdout.write('%s: previous time:%s, delta time:%s\n'
+                         %(getCurrentTime(), self.time_pre, self.time_delta))
+
         
     def put_callback(self, v = None):
         self.put_complete = 0
@@ -54,8 +88,11 @@ def definePVs():
             'mcs_stp':'9idbBNP:3820:StopAll', 'mcs_status':'9idbBNP:3820:Acquiring',
             'xmap_status':'9idbXMAP:Acquiring', 'netCDF_save':'9idbXMAP:netCDF1:WriteFile',
             'netCDF_status':'9idbXMAP:netCDF1:WriteFile_RBV',
+            'collect_mode':'9idbXMAP:CollectMode',
             'y_motor_ready':'9idbTAU:SY:Ps:Ready', 'xztp_motor_ready':'9idbTAU:SM:Ps:Ready',
             'x_piezo_val':'9idbTAU:M7009.VAL', 'y_piezo_val':'9idbTAU:M7010.VAL',
+            'scan2Record':'9idbBNP:scan2',
+            
             
 
             'x_motorMode':'9idbTAU:SM:Ps:xMotionChoice.VAL',
@@ -65,6 +102,7 @@ def definePVs():
             'piezo_xCenter':'9idbTAU:SM:Ps:xCenter.PROC',
             'piezo_yCenter':'9idbTAU:SY:Ps:yCenter.PROC',
             'tot_lines':'9idbBNP:scan2.NPTS', 'cur_lines':'9idbBNP:scan2.CPT',
+            'tot_pts_perline':'9idbBNP:scan1.NPTS',
             
 
             'CryoCon1:In_1':'9idbCRYO:CryoCon1:In_1:Temp.VAL',
@@ -85,6 +123,18 @@ def definePVs():
             
             }
      return pvs
+ 
+def scan2RecordDetectorTrigerPVs():
+    pvs = {'scan1':'9idbBNP:scan1.EXSC',
+           'eigerAcquire':'2iddEGR:cam1:Acquire',
+           'eigerFileCapture':'2iddEGR:HDF1:Capture'}
+    return pvs
+    
+def getEiger():
+    # create Eiger cam record
+    e = eiger('2iddEGR:cam1:', '2iddEGR:HDF1:')
+    return e
+    
 #    pvs = {'test1':'2idbleps:userTran2.CMTA', 'test2':'2idbleps:userTran2.CMTB', 'test3':'2idbleps:userTran2.CMTC',
 #           'test4':'2idbleps:userTran2.CMTD', 'test5':'2idbleps:userTran2.CMTE', 'test6':'2idbleps:userTran2.CMTF',
 #           'test7':'2idbleps:userTran2.CMTG'}
@@ -94,6 +144,9 @@ def getPVobj():
     pvObjs = {}
     pvs = definePVs()
     for k, v in pvs.items():
-        pv_obj = pvObject(v, k)
-        pvObjs.update({k: pv_obj})
+        if 'Record' not in k:
+            pv_obj = pvObject(v, k, onchange_callback=True if '9idbBNP:scan2.CPT'==v else False)
+            pvObjs.update({k: pv_obj})
+        else:
+            pvObjs.update({k:epics.devices.Scan(v)})
     return pvObjs

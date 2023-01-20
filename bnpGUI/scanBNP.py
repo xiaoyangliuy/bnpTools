@@ -2,6 +2,7 @@
 Control PV based on type of measurements
 
 '''
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
 
 import os, time, sys
 import numpy as np
@@ -21,7 +22,8 @@ def xrfSetup(pvComm, scandic):
     parm_value = [float(scandic[s]) for s in parms]
     pvComm.writeScanInit('XRF', scandic['smpName'], str(scandic))
     pvComm.blockBeamBDA(scandic['bda'])
-    pvComm.changeXYcombinedMode()
+    # pvComm.changeXYcombinedMode()
+    pvComm.changeXtoCombinedMode()
     pvComm.assignPosValToPVs(parm_label, parm_value)
     return getMotorList(scandic)
 
@@ -40,8 +42,11 @@ def scanStart(pvComm, bda):
     pvComm.openBeamBDA(bda)
 
 def scanFinish(pvComm, bda):
+    time.sleep(5)
     pvComm.blockBeamBDA(bda)
     pvComm.changeXtoCombinedMode()
+    pvComm.centerPiezoY(waittime=3)   #at 2idd, stage issue, work around
+    pvComm.centerPiezoY(waittime=3)   #at 2idd, stage issue, work around
     time.sleep(0.5)
     
 def fileReady(coarse_sc, fdir, tlim = 30):

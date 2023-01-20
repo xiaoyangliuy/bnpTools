@@ -1,3 +1,5 @@
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
+
 import tkinter as tk
 from tkinter import ttk
 from setupFrame import setupFrame
@@ -22,7 +24,7 @@ class MainWindow(tk.Frame):
 if __name__ == "__main__":
     root = tk.Tk()
     gui = MainWindow(root)
-    root.geometry('1330x760')
+    root.geometry('1260x760')
     root.resizable(False, False)
     root.mainloop()
 

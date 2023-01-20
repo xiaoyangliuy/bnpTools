@@ -13,8 +13,11 @@ class stdoutRedirect(object):
         self.text_space = text_widget
 
     def write(self,string):
-        self.text_space.insert('end', string)
-        self.text_space.see('end')
+        if self.text_space is not None:
+            self.text_space.insert('end', string)
+            self.text_space.see('end')
+        else:
+            sys.stdout.write(string)
     
     def flush(self):
         pass

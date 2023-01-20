@@ -1,3 +1,4 @@
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
 import numpy as np
 import h5py, os
 from sklearn.cluster import KMeans
@@ -10,6 +11,7 @@ import matplotlib.patches as mpatches
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 
 def estShifts(refSc, currSc, fpath, elm):
     ref, ref_x_pos, ref_y_pos = getElmMap(os.path.join(fpath, refSc), elm)
@@ -91,7 +93,7 @@ def getElmMap(fname, elm):
     return elmmap, x_pos, y_pos
 
 
-def kmean_analysis(n_clusters, data, random_state, sigma = None, cval = None,
+def kmean_analysis(n_clusters, data, random_state = 52, sigma = None, cval = None,
                    plotoption = None, savefig = None, fname = None):
     
     data[np.isnan(data)] = 1e-5

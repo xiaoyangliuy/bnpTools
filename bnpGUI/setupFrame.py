@@ -5,6 +5,7 @@ Created on Tue Aug  3 11:22:02 2021
 
 Construct setup frame for bnp_gui
 """
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
 
 import tkinter as tk
 from tkinter import ttk
@@ -14,7 +15,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib import colors, patches
 from pvComm import pvComm
-from misc import coordinate_transform
+from misc import coordinate_transform, checkEntryDigit
 
 
 class setupFrame:
@@ -306,14 +307,14 @@ class setupFrame:
             for f in flabel: 
                 self.scanParms[f].delete(0, tk.END)
 
-    def checkEntryDigit(self, P):
-        if (P == "") | (P == "-"):
-            return True
-        try:
-            float(P)
-            return True
-        except:
-            return False
+    # def checkEntryDigit(self, P):
+    #     if (P == "") | (P == "-"):
+    #         return True
+    #     try:
+    #         float(P)
+    #         return True
+    #     except:
+    #         return False
 
     def calcTime(self):
         strlist = ["width", "height", "w_step", "h_step", "dwell"]
@@ -486,15 +487,25 @@ class setupFrame:
         self.scanType = tk.StringVar(self.setupfrm)
         self.scanType.set("XRF")
         scantype = ["XRF",'Coarse-Fine (Fixed Angle)', "Angle Sweep", "Coarse-Fine"]
-        padx = [(18, 10), (0, 10), (0, 10), (0, 10)]
+        padx = [(18, 10), (0, 10), (18, 10), (0, 10)]
         self.row += 1
         for i, s in enumerate(scantype):
             a = ttk.Radiobutton(
-                master=self.setupfrm, text=s, variable=self.scanType, value=s,
-            )
-            a.grid(row=self.row, column=self.col + i, padx=padx[i], stick='w')
-
-        self.row += 1
+                master=self.setupfrm, text=s, 
+                variable=self.scanType, value=s)
+            
+            a.grid(row=self.row if i < 2 else (self.row+1), 
+                   column=self.col + i%2, padx=padx[i], 
+                   stick='w')
+        
+        # add ptycho checkboc
+        self.ptychoVal = tk.IntVar()
+        self.ptychoVal.set(0)
+        ptycho_btn = ttk.Checkbutton(
+            master=self.setupfrm, text='Ptycho Enabled', variable=self.ptychoVal)
+        ptycho_btn.grid(row=self.row+1, column=self.col+2)
+        
+        self.row += 2
         self.inserttype_txt = tk.Label(
             self.setupfrm, text="2. Choose a method to insert scan parameters:"
         )
@@ -549,7 +560,7 @@ class setupFrame:
         ]
         #        corr = self.pvComm.getXYZcenter()
         temp_input = [0] * 6 + [20, 20, 1, 15, 10, 1]
-        vcmd = self.setupfrm.register(self.checkEntryDigit)
+        vcmd = self.setupfrm.register(checkEntryDigit)
         for i, s in enumerate(self.inputs_labels[0]):
             if i % ncol == 0:
                 self.row += 1
@@ -633,6 +644,7 @@ class setupFrame:
         for i, s in enumerate(self.inputs_labels[1]):
             if i % ncol == 0:
                 self.row += 1
+                    
             tk.Label(self.setupfrm, text=s + ":").grid(
                 row=self.row, column=self.col + i % ncol, sticky="W", columnspan=2
             )
@@ -649,6 +661,8 @@ class setupFrame:
                 a.insert(0, "0")
             a.grid(row=self.row, column=self.col + i % ncol, padx=(70, 0))
             self.scanParms.update({s: a})
+        # self.scanParms.update({'ptycho':self.ptychoVal})
+        
 
         row = self.row + 7
         self.pardir = tk.StringVar()

@@ -5,15 +5,17 @@ Created on Wed Jul 28 14:32:26 2021
 
 Function to setup scan, interact with PV mostly
 """
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
 
-from pvObjects import getPVobj
+from pvObjects import getPVobj, scan2RecordDetectorTrigerPVs, getEiger
 from misc import getCurrentTime
-import os, time, sys
+import os, time, sys, datetime
 import numpy as np
 
 class pvComm():
     def __init__(self, userdir = None, log = 'log.txt'):
         self.pvs = getPVobj()
+        self.eiger = getEiger()
         if userdir is None:
             self.userdir = self.getDir()
         else:
@@ -34,6 +36,16 @@ class pvComm():
         fs = fs.replace('//micdata/data1', '/mnt/micdata1')
         return os.path.join(fs, self.pvs['subdir'].pv.value.replace('mda', ''))
     
+    def initCurLineTimer(self):
+        self.pvs['cur_lines'].time_pre = datetime.datetime.now()
+        self.pvs['cur_lines'].time_delta = 0
+        
+    def get1DTime(self):
+        return self.pvs['1D_time'].pv.get()
+        
+    def getCurLineTimeStamp(self):
+        return self.pvs['cur_lines'].time_pre
+    
     def getBDAx(self):
         return np.round(self.pvs['BDA_pos'].pv.value, 2)
     
@@ -44,29 +56,51 @@ class pvComm():
         return np.round(self.pvs['tomo_rot_Act'].pv.value, 2)
     
     def scanPause(self):
-        self.pvs['wait'].put_callback(1)
+        self.pvs['wait'].pv.put(1)
     
     def scanResume(self):
-        self.pvs['wait'].put_callback(0)
+        self.pvs['wait'].pv.put(0)
         
     def scanAbort(self):
         self.pvs['abort'].put_callback(1)
         
-    def resetDetector(self):
-        print('check netCDF status: current status is %s'%(self.pvs['netCDF_status'].pv.get(as_string=True)))
-        if self.pvs['netCDF_status'].pv.get(as_string=True) == 'Writing':
-            print('Save current netCDF data and stop file write')
-            self.pvs['netCDF_save'].pv.put(1)
-            time.sleep(0.1)
-            self.pvs['netCDF_stp'].pv.put(1)
-        self.pvs['mcs_stp'].pv.put(1)
-        self.pvs['xmap_stp'].pv.put(1)
-        time.sleep(0.2)
-        if self.detectorDone():
-            self.scanResume()
-            return 1
-        else:
-            return -1
+    def resetDetector(self, ptychoEnable):
+        time.sleep(1)
+        self.pvs['xmap_stp'].put_callback(1)
+        time.sleep(1)
+        self.pvs['netCDF_stp'].put_callback(0)
+        time.sleep(1)
+        self.pvs['mcs_stp'].put_callback(0)
+        
+        if ptychoEnable:
+            self.eiger.cam.Acquire = 0
+            time.sleep(1)
+            self.eiger.fileIO.Capture = 0
+            time.sleep(1)
+        
+    def updateDetectorTriger(self, ptychoEnable):
+        s = self.pvs['scan2Record']
+        dtriger_pvs = scan2RecordDetectorTrigerPVs()
+        s.T1PV = dtriger_pvs['scan1']
+        s.T4PV = ''
+        s.T2PV = dtriger_pvs['eigerAcquire'] if ptychoEnable else ''
+        s.T3PV = dtriger_pvs['eigerFileCapture'] if ptychoEnable else ''
+
+            
+    def updateEigerFileIO(self, filename, num_pts):
+        self.eiger.fileIO.setFileName(filename)
+        self.eiger.fileIO.AutoIncrement = 1
+        self.eiger.fileIO.NumCapture = num_pts
+        self.eiger.fileIO.FileNumber = 0
+        
+    def updateEigerCam(self, acquireTime, num_img, trig_mode, num_trig):
+        self.eiger.cam.AcquirePeriod = acquireTime
+        self.eiger.cam.NumImages = num_img
+        self.eiger.cam.TriggerMode = trig_mode
+        self.eiger.setNumTriggers(num_trig)
+        
+    def getNumPtsPerLine(self):
+        return self.pvs['tot_pts_perline'].pv.get()
         
     def logCryoTemp(self):
         temp_pv = ['CryoCon1:In_1', 'CryoCon1:In_2', 'CryoCon1:In_3', 'CryoCon3:In_2', 'CryoCon3:Loop_2']
@@ -75,13 +109,6 @@ class pvComm():
         msg = getCurrentTime() + ': ' + s + '\n'
         self.logger('%s'%msg)
 
-    def detectorDone(self):
-        xmap_done = self.pvs['xmap_status'].pv.value
-        mcs_done = self.pvs['mcs_status'].pv.value
-        if all([not xmap_done, not mcs_done]):
-            return False
-        else:
-            return True
     
     def changeTomoRotate(self, theta):
         curr_angle = np.round(self.pvs['tomo_rot_Act'].pv.value, 2)
@@ -110,9 +137,10 @@ class pvComm():
         self.pvs['x_motorMode'].pv.put(0)
         self.pvs['y_motorMode'].pv.put(0)
         
-    def changeXtoCombinedMode(self):        
+    def changeXtoCombinedMode(self, waittime=0.5):        
         self.logger('%s; Changing XY scan mode to combined motion\n'%(getCurrentTime()))
         self.pvs['x_motorMode'].pv.put(0) 
+        time.sleep(waittime)
         
     def changeXtoPiezolMode(self):
         self.logger('%s: Changing X scan mode to Piezo only\n'%(getCurrentTime()))
@@ -141,6 +169,11 @@ class pvComm():
             sum_diff += abs(self.pvs['%s_Rqs'%m[0]].pv.get() - self.pvs['%s_Act'%m[0]].pv.get())
         return sum_diff
     
+    def centerPiezoY(self, waittime = 2, max_ycenter = 31000):
+        self.pvs['piezo_yCenter'].pv.put(1)
+        self.logger('%s: Piezo ycenter value: %.2f\n'%(getCurrentTime(), self.pvs['y_piezo_val'].pv.get()))
+        time.sleep(waittime)
+
     
     def centerPiezoXY(self):
         MAX_WAIT_TIME = 5  #sec
@@ -157,6 +190,9 @@ class pvComm():
             time.sleep(0.2)
         
         return self.motorReady_XZTP()
+    
+    def getYCenterValue(self):
+        return self.pvs['y_piezo_val'].pv.get()
         
         # MAX_WAIT_TIME = 2  #sec
         # t_diff = 0
@@ -188,6 +224,13 @@ class pvComm():
             self.logger('%s: Change %s to %.3f\n' % (getCurrentTime(), s_, v_))
             
     def assignSinglePV(self, pvstr, pvval):
+        # previous logic at bnp
+        # self.pvs[pvstr].pv.put(pvval)
+        # self.logger('%s: Change %s to %.3f\n' % (getCurrentTime(), pvstr, pvval))
+        
+        # current logic at 2idd, checking y-center value on sm_y
+        if 'y' in pvstr:
+            self.centerPiezoY()
         self.pvs[pvstr].pv.put(pvval)
         self.logger('%s: Change %s to %.3f\n' % (getCurrentTime(), pvstr, pvval))
             
@@ -212,29 +255,7 @@ class pvComm():
         else:
             self.logger('%s: %s motor not in position, current: %.2f,'\
                             ' request: %.2f\n'%(getCurrentTime(), l, actpv.value, rqspv.value))
-            return 0
-    
-#    def motorReady(self, label, mtolerance):
-#        self.logger('%s: Checking whether motors are ready.\n'%(getCurrentTime()))
-#        rules = [0] * len(label)
-#        for i, (l, t) in enumerate(zip(label, mtolerance)):
-#            actpv = self.pvs['%s_Act'%l].pv
-#            rqspv = self.pvs['%s_Rqs'%l].pv
-#            self.pvs['%s_Act'%l].motorReady(rqspv, t)
-#            if self.pvs['%s_Act'%l].motor_ready:
-#                self.logger('%s: %s motor is in position with value'\
-#                                '%.2f\n'%(getCurrentTime(), l, actpv.value))
-#                rules[i] = 1
-#            else:
-#                self.logger('%s: %s motor not in position, current: %.2f,'\
-#                                ' request: %.2f\n'%(getCurrentTime(), l, actpv.value, rqspv.value))
-#            time.sleep(1)
-#                
-#        if all(rules):
-#            self.logger('%s: Motors ready\n'%getCurrentTime())
-#            return 1
-#        else:
-#            return 0         
+            return 0     
     
     def nextScanName(self):
         return '%s%s.mda'%(self.pvs['basename'].pv.value, 

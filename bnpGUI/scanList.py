@@ -7,6 +7,7 @@ Created on Sun Oct 31 07:04:22 2021
 
 Create a scanlist class 
 """
+#!/home/beams/USERBNP/.conda/envs/py36/bin/python
 import tkinter as tk
 from tkinter import ttk
 import numpy as np
@@ -16,7 +17,7 @@ import pandas as pd
 class scanList(object):
     
     def __init__(self, scanfrm, inputs_labels, calctime_out,
-                 scanType, smp_name, bda, tot_time, scanParms):
+                 scanType, smp_name, bda, tot_time, ptycho, scanParms):
         self.scanfrm = scanfrm
         self.inputs_labels = inputs_labels
         self.sclist = None
@@ -27,6 +28,7 @@ class scanList(object):
         self.smp_name = smp_name
         self.bda = bda
         self.tot_time = tot_time
+        self.ptycho = ptycho
         self.scanParms = scanParms
         self.scanidx = 0
         
@@ -38,7 +40,7 @@ class scanList(object):
         self.pbarlistval = tk.DoubleVar()
         self.pbarlistval.set(0.0)
         self.pbar_sclist = ttk.Progressbar(self.scanfrm, orient = tk.HORIZONTAL, 
-                                           length = 300, mode = 'determinate',
+                                           length = 200, mode = 'determinate',
                                            variable = self.pbarlistval)
         self.pbar_sclist.grid(row = 23, column = 1, columnspan = 3, sticky='w', 
                               pady = (35,0), padx=(180,0))
@@ -53,7 +55,7 @@ class scanList(object):
         
         inlabels = self.inputs_labels[0]
         inlabels.insert(0, inlabels.pop(inlabels.index('target_theta')))
-        t_col_mod = ['id', 'status', 'scanType', 'smpName'] + inlabels + t_col + ['eta']
+        t_col_mod = ['id', 'status', 'scanType', 'smpName'] + inlabels + t_col + ['ptycho', 'eta']
         
         self.sclist_col = tuple(t_col_mod)
         self.sclist['columns']= self.sclist_col
@@ -63,15 +65,15 @@ class scanList(object):
             if (c == 'id') | (c == 'smpName'):
                 self.sclist.column(c, anchor = tk.CENTER, width=75, stretch=tk.NO)
             else:
-                self.sclist.column(c, anchor = tk.CENTER, width=57, minwidth=70, stretch=tk.YES)
+                self.sclist.column(c, anchor = tk.CENTER, width=52, minwidth=70, stretch=tk.YES)
             self.sclist.heading(c, text = c, anchor = tk.CENTER)
         self.sclist.grid(row = 0, column = 0, columnspan = 12, padx=(5,0),
                          stick = 'w')
         
         sb = tk.Scrollbar(self.scanfrm, orient=tk.VERTICAL,command=self.sclist.yview)
-        sb.place(x=1285, y=18, height=400)
+        sb.place(x=1240, y=18, height=400)
         sb_h = tk.Scrollbar(self.scanfrm, orient=tk.HORIZONTAL, command=self.sclist.xview)
-        sb_h.place(x=5, y=420, width=1276, height = 12)
+        sb_h.place(x=5, y=420, width=1240, height = 12)
         self.sclist.config(yscrollcommand=sb.set, xscrollcommand = sb_h.set)
         self.sclist.bind("<Double-1>", self.scanListEdit)
         self.sclist.bind('<1>', self.closePopUpEntry)
@@ -93,6 +95,7 @@ class scanList(object):
                 t_inc = float(self.scanParms['theta_inc'].get())
                 t_max = float(self.scanParms['theta_max'].get()) + t_inc
                 angles = np.arange(t_min, t_max, t_inc)
+                angles = angles if t_min > 0 else angles[::-1]
                 
                 for a in angles:
                     self.insertParmEntry(theta=a)
@@ -112,13 +115,18 @@ class scanList(object):
         scanparm.update({'id':self.scanidx, 'status':'queue', 
                          'scanType':self.scanType.get(), 
                          'smpName':self.smp_name.get(),
+                         'ptycho':self.ptycho.get(),
                          'eta':float(self.calctime_out['text'])})
+        
                     
         if theta is not None:
+            
+            # determine the type of scans
             if self.scanType.get() == 'Coarse-Fine': sctype = ['Coarse', 'Fine']
             else: sctype = [self.scanType.get()]
             
             try:
+                # perform coordinate transform based on given x-, y- and z- at theta 0
                 clabel = ['x', 'y', 'z']
                 c0 = [theta] + [float(scanparm[s+'_theta0']) for s in clabel]
                 ctform = coordinate_transform(*c0)
@@ -139,7 +147,10 @@ class scanList(object):
                             
                     scanparm['target_theta'] = theta
                     scanparm['scanType'] = i
+
                     sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
+                    
+    
                     self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
                                        text='', values=tuple(sparm))
                     self.scanidx += 1
@@ -166,6 +177,7 @@ class scanList(object):
                 self.scanidx += 1
             
         else:
+            print('in here')
             sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
             self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
                                    text='', values=tuple(sparm))
