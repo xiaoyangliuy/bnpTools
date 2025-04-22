@@ -93,8 +93,10 @@ def definePVs():
             'x_piezo_val':'9idbTAU:M7009.VAL', 'y_piezo_val':'9idbTAU:M7010.VAL',
             'scan2Record':'9idbBNP:scan2',
             
+            'mono_mode': '9idb:mono_pid1.FBON', 'read_1':'9idbXMAP:scan1.R1PV', 
+            'drive_1':'9idbXMAP:scan1.P1PV', 'mono_eng':'2ida2:BraggEAO.VAL',
+            'dwell_step': '9idbXMAP:userTran1.P', 'xanes_eng_cen':'9idbXMAP:scan1.P1CP',
             
-
             'x_motorMode':'9idbTAU:SM:Ps:xMotionChoice.VAL',
             'y_motorMode':'9idbTAU:SY:Ps:yMotionChoice.VAL',
             'x_updatecenter':'9idbBNP:scan1.P1CP', 'y_updatecenter':'9idbBNP:scan2.P1CP',

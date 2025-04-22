@@ -8,10 +8,15 @@ from skimage.transform import resize
 from scipy.fftpack import fft2, ifft2
 import skimage.filters
 import matplotlib.patches as mpatches
-import matplotlib
-matplotlib.use('Agg')
+#import matplotlib
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+from skimage import io
+import cv2 as cv
+from scipy.ndimage import shift, center_of_mass
+from scipy import ndimage
+import epics as PV
+import matplotlib.patches as patches
 
 def estShifts(refSc, currSc, fpath, elm):
     ref, ref_x_pos, ref_y_pos = getElmMap(os.path.join(fpath, refSc), elm)
@@ -78,7 +83,7 @@ def plotBBox(elmmap, box, x_pos, y_pos):
     ax.pcolor(x_pos, y_pos, elmmap, cmap='gray', shading='auto')
     ax.add_patch(rect)
     return fig
-
+'''
 def getElmMap(fname, elm):
     elmmap = []
     with h5py.File(fname, 'r') as dat:
@@ -91,7 +96,48 @@ def getElmMap(fname, elm):
         except:
             raise ValueError('Invalid element! %s is not in channel list'%(elm))
     return elmmap, x_pos, y_pos
-
+'''
+#---------------------------xyl----------------------------
+def getElmMap(elm,flag, test_folder=None, test_sc_range=None,fname=''):
+    #elmmap = []
+    if flag == 0:
+        with h5py.File(fname, 'r') as dat:
+            xrfdata = dat['/MAPS/XRF_roi'][:]
+            try:
+                channel_names = np.char.decode(dat['MAPS']['channel_names'][:])
+                elm_idx = np.where(channel_names==elm)[0][0]
+                suc = True    
+                elmmap = xrfdata[elm_idx,:,:]
+                x_pos = dat['/MAPS/x_axis'][:]
+                y_pos = dat['/MAPS/y_axis'][:]
+                theta = round(float(dat['MAPS/extra_pvs'][1,8].decode('utf-8')))  #get angle int info
+            except IndexError:
+                print('Invalid element! %s is not in channel list'%(elm))
+                suc = False
+                elmmap = None
+                x_pos = 0        
+                y_pos = 0      
+                theta = round(float(dat['MAPS/extra_pvs'][1,8].decode('utf-8')))  #get angle int info
+        f = 0
+    else:
+        scan_num = test_sc_range[getElmMap.counter]
+        scan_num_formatted = '{:04d}'.format(scan_num)
+        f = f'{test_folder}bnp_fly{scan_num_formatted}.mda.h5'
+        print(f'test_image:{f}')
+        with h5py.File(f, 'r') as dat:
+            xrfdata = dat['/MAPS/XRF_roi'][:]
+            channel_names = np.char.decode(dat['MAPS']['channel_names'][:])
+            elm_idx = np.where(channel_names==elm)[0][0]
+            elmmap = xrfdata[elm_idx,:,:]
+            x_pos = dat['/MAPS/x_axis'][:]
+            y_pos = dat['/MAPS/y_axis'][:]
+            theta = round(float(dat['MAPS/extra_pvs'][1,3].decode('utf-8')))  #get angle int info
+            suc = True
+    print(f'call_count is {getElmMap.counter}, scan_num is {scan_num}')
+    getElmMap.counter += 1
+    return getElmMap.counter, suc, elmmap, x_pos, y_pos, theta, f
+getElmMap.counter = 0
+#----------------------xyl------------------------------------
 
 def kmean_analysis(n_clusters, data, random_state = 52, sigma = None, cval = None,
                    plotoption = None, savefig = None, fname = None):
@@ -161,6 +207,74 @@ def phaseCorrelate(image1, image2):
         t1 -= shape[1]
     return t0, t1
 
+# second k-mean analysis - xyl
+def kmean_analysis_2(file, elmmap,n_clusters,Gaussian_blur,log_his,sel_cluster,savefolder,theta):  #file can be raw image, log image
+    #fig = plt.figure()
+    fig, (ax1,ax2,ax3) = plt.subplots(1,3)
+    #elmmap = io.imread(elmmap)
+    elmmap[np.isnan(elmmap)] = 1e-5
+    elmmap[np.isinf(elmmap)] = 1e-5
+    h,w = elmmap.shape
+    histogram, bin_edges = np.histogram(elmmap, bins=256)
+    if log_his==0:    
+        img_1d = elmmap.reshape(h*w,1)     
+        kmeans = KMeans(n_clusters=n_clusters, init='k-means++',n_init='auto',max_iter=500,tol=1e-4, random_state=0, algorithm='lloyd').fit(img_1d)
+        center = kmeans.cluster_centers_
+        ax2.plot(bin_edges[0:-1], histogram,linewidth=3)
+    else:
+        #log histogram        
+        log_his = np.log(histogram)
+        log_his[np.isnan(log_his)] = 1e-5
+        log_his[np.isinf(log_his)] = 1e-5
+        bin_log_his = np.vstack((bin_edges[0:-1], log_his)).T
+        kmeans = KMeans(n_clusters=n_clusters, init='k-means++',n_init='auto',max_iter=500,tol=1e-4, random_state=0, algorithm='lloyd').fit(bin_log_his)
+        center = kmeans.cluster_centers_
+        ax2.plot(bin_edges[0:-1], log_his,linewidth=3)
+    his_fit = kmeans.fit_predict(img_1d)
+    his_fit_2d = his_fit.reshape(h,w)
+    if sel_cluster == 0:
+        his_fit_2d = 1-his_fit_2d
+    else:
+        his_fit_2d = his_fit_2d
+    if Gaussian_blur != 0:
+        his_fit_2d = cv.blur(his_fit_2d,(Gaussian_blur,Gaussian_blur))
+    else:
+        his_fit_2d = his_fit_2d
+    img_cen = ndimage.center_of_mass(his_fit_2d) #(y,x)
+    ax1.imshow(elmmap,aspect='auto')
+    ax1.plot(img_cen[1], img_cen[0], marker='o',markersize=10)  
+    ax2.axvline(center[0,0],color='black',linewidth=2)
+    ax2.axvline(center[1,0],color='black',linewidth=2)
+    ax3.imshow(his_fit_2d,aspect='auto')
+    ax3.plot(img_cen[1], img_cen[0], marker='o',markersize=10)
+    fname = os.path.splitext(os.path.basename(file))[0]
+    ax1.set_title(file,fontdict={'fontsize':8})
+    ax2.set_title(f'log_hist={log_his}_hist+K-meanCenter',fontdict={'fontsize':8})
+    ax3.set_title('K-mean_seg',fontdict={'fontsize':8})
+    plt.tight_layout()
+    #plt.show(block=False)
+    fig.savefig(f'{savefolder}/{fname}_ang{theta}.png')
+    print('coarse {fname} image saved')  #fname is coarse scan name
+    #plt.close(fig)
+    return center, his_fit_2d, img_cen
 
-
-
+def getROIcoordinate_data_2(fname, elm, n_clusters,Gaussian_blur,log_his,rev_pixval):
+    suc, elmmap, x_pos, y_pos = getElmMap(fname, elm)
+    if suc == True:
+        cen, his_fit_2d, img_cen = kmean_analysis_2(elmmap,n_clusters,Gaussian_blur,log_his,rev_pixval)
+        x_cen = int(img_cen[1])
+        y_cen = int(img_cen[0]) 
+        x_len_range = np.arange(elmmap.shape[1])
+        y_len_range = np.arange(elmmap.shape[0])
+        #zip_pix_pos = {x_len_range[i]: x_pos[i] for i in range(len(x_len_range))}
+        zip_pix_pos_x = dict(zip(x_len_range, x_pos))  
+        zip_pix_pos_y = dict(zip(y_len_range, y_pos))  
+        new_x = zip_pix_pos_x.get(x_cen)
+        new_y= zip_pix_pos_y.get(y_cen)
+        width = x_pos[-1] - x_pos[0]
+        height = y_pos[-1] - y_pos[0]
+        return new_x, new_y, width, height
+    else:
+        return None
+        
+    
