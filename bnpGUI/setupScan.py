@@ -8,7 +8,7 @@ Function to setup scan, interact with PV mostly
 import time, os, sys
 from epics import caput, caget
 import numpy as np
-from imgProcessing import getROIcoordinate, getElmMap, getROIcoordinate_data
+from imgProcessing import getROIcoordinate, getElmMap, getROIcoordinate_data, getROIcoordinate_data_2
 from tqdm import tqdm
 
 from pvObjects import getPVobj
@@ -77,12 +77,12 @@ class scanControl():
         self.pvs['piezo_xCenter'].pv.put_callback(1)
         self.pvs['piezo_ycenter'].pv.put_callback(1)
     
-    def assignPosValToPVs(self, pvstr, pvval):
+    def assignPosValToPVs(self, pvstr, pvval):  #assign pv value
         for s_, v_ in zip(pvstr, pvval):
             self.pvs[s_].pv.put_callback(v_)
             self.logger('%s: Change %s to %.3f\n' % (getCurrentTime(), s_, v_))
     
-    def motorReady(self, label, mtolerance):
+    def motorReady(self, label, mtolerance):  #
         self.logger.write('%s: Checking whether motors are ready.\n'%(getCurrentTime()))
         rules = [0] * len(label)
         for i, (l, t) in enumerate(zip(label, mtolerance)):
@@ -102,7 +102,7 @@ class scanControl():
         else:
             return 0
          
-    def fileReady(self, next_sc, filepath, time_lim):
+    def fileReady(self, next_sc, filepath, time_lim):  #wait till coarse scan created
         # Wait until file exists
         while not os.path.exists(filepath):
             time.sleep(1)
@@ -110,7 +110,7 @@ class scanControl():
         time_diff = 0
         while (time_diff < time_lim):
             time.sleep(1)
-            file_mod_time = os.stat(filepath).st_mtime
+            file_mod_time = os.stat(filepath).st_mtime  #modify time of filepath
             time_diff = int(time.time() - file_mod_time)
             sys.stdout.write('Waiting for coarse scan file %s to be ready,'\
                              ' file modified time: %d, time difference: %d \n'\
@@ -250,13 +250,9 @@ class scanControl():
         self.changeTomoRotate(params[-1]) # change to desired angle
         self.motorReady(['x_center', 'z_value'], [0.1, 0.5])
         self.execScan(scname, scidx, n_scns, pbar)
-    
-    def coarseFineScanInit(self, params_label, params, scname, 
-                           scidx, n_scns, scan_setting, pbar, 
-                           skipCoarse = False):
-        if not skipCoarse:
-            self.angleSweepScanInit(params_label, params, 
-                                    scname, scidx, n_scns, pbar)
+    '''   
+    def coarseFineScanInit(self, params_label, params, scname, scidx, n_scns, scan_setting):
+        self.angleSweepScanInit(params_label, params, scname, scidx, n_scns)
         
         # If find_bbox is on, perform image processing on the coarse scan to get coordinates
         if scan_setting['find_bbox']:
@@ -308,7 +304,38 @@ class scanControl():
                             ' suggesting a no feature region.\n Aborting the batch scan. \n')
                 ##TODO: send out an email if this happen
                 status = -1  # Flag to terminate batch scan
-    
+    '''
+    def coarseFineScanInit_2(self, fname, elm, n_clusters, params_label, params, scname, scidx, n_scns, scan_setting):     
+        self.angleSweepScanInit(params_label, params, scname, scidx, n_scns)
+        cscan_path = os.path.join(self.userdir, 'img.dat/%s.h5'%(scname))
+        time_lim = 10  #sec
+        self.fileReady(scname, cscan_path, time_lim)
+        #elmmap, x_pos, y_pos = getElmMap(fname, elm)
+        #img_path = self.imgProgFolderCheck()   
+        #figpath = os.path.join(img_path, 'bbox_%s.png'%(scname))
+        new_x, new_y, width, height = getROIcoordinate_data_2(fname, elm, n_clusters,Gaussian_blur=scan_setting['Gaussian_blur'],log_his=scan_setting['log_hist'],rev_pixval=scan_setting['reverse_pixelvalue'])
+        f_scanparm = scan_setting['fine_pts_area']
+        proceed = 1
+        if proceed:
+            self.logger('%.2f(width) \n %.2f(height)\n'%(width, height))
+            curr_smz = caget(self.pvs['z_value_Rqs'])  #get the value of pv
+            scan_ = params[-1]
+            params = []
+            f_scanparm = scan_setting['fine_pts_area']
+            params = f_scanparm + [scan_] + [new_x, new_y, curr_smz]
+            flabels = ['x_width', 'y_width', 'x_step', 'y_step', 'dwell', 'sm_rot_Rqs',
+                          'x_center_Rqs','y_center_Rqs', 'z_value_Rqs']
+
+            next_sc = self.nextScanName(caget(self.pvs['fname_saveData']))
+            self.logger('%s Initiating fine scan %s %s\n'%('#'*20, next_sc, '#'*20))
+            self.logger('Sample temp (K): %.3f\n'%(caget(self.pvs['temp'])))
+            self.fineScanInit(flabels, params, next_sc, scidx, n_scns)
+        else:
+            c_ang = self.pvs['tomo_rot_Act'].pv.value
+            self.logger('No feature region at angle{c_ang}')
+            ##TODO: send out an email if this happen
+            #status = -1  # Flag to terminate batch scan
+            
     def getXYZBbox(self, scname, elm, n_cluster=2, sel_cluster = 1,
                 time_lim = 10, use_mask = False, elm_mask = 'P', 
                 n_std = 2):

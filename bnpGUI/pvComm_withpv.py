@@ -35,10 +35,9 @@ class pvComm():
         self.logfid.flush()   #write 'msg' to log file immdiately 
     
     def getDir(self):
-        return '/home/beams/USERBNP/scripts/graceluo/bnp_GUI/bnpGUI_noPV/log'
-        #fs = self.pvs['filesys'].pv.value
-        #fs = fs.replace('//micdata/data1', '/mnt/micdata1')
-        #return os.path.join(fs, self.pvs['subdir'].pv.value.replace('mda', ''))
+        fs = self.pvs['filesys'].pv.value
+        fs = fs.replace('//micdata/data1', '/mnt/micdata1')
+        return os.path.join(fs, self.pvs['subdir'].pv.value.replace('mda', ''))
     
     #-----------------current directory--------------------
     def cur_dir(self):
@@ -58,16 +57,13 @@ class pvComm():
         return self.pvs['cur_lines'].time_pre
     
     def getBDAx(self):
-        return 0
-        #return np.round(self.pvs['BDA_pos'].pv.value, 2)
+        return np.round(self.pvs['BDA_pos'].pv.value, 2)
     
     def getSMAngle(self):
-        return 0
-        #return np.round(self.pvs['sm_rot_Act'].pv.value, 2)
+        return np.round(self.pvs['sm_rot_Act'].pv.value, 2)
     
     def getTomoAngle(self):
-        return 0
-        #return np.round(self.pvs['tomo_rot_Act'].pv.value, 2)
+        return np.round(self.pvs['tomo_rot_Act'].pv.value, 2)
     
     def scanPause(self):
         self.pvs['wait'].pv.put(1)
@@ -93,13 +89,12 @@ class pvComm():
             time.sleep(1)
         
     def updateDetectorTriger(self, ptychoEnable):
-        pass
-        #s = self.pvs['scan2Record']
-        #dtriger_pvs = scan2RecordDetectorTrigerPVs()
-        #s.T1PV = dtriger_pvs['scan1']
-        #s.T4PV = ''
-        #s.T2PV = dtriger_pvs['eigerAcquire'] if ptychoEnable else ''
-        #s.T3PV = dtriger_pvs['eigerFileCapture'] if ptychoEnable else ''
+        s = self.pvs['scan2Record']
+        dtriger_pvs = scan2RecordDetectorTrigerPVs()
+        s.T1PV = dtriger_pvs['scan1']
+        s.T4PV = ''
+        s.T2PV = dtriger_pvs['eigerAcquire'] if ptychoEnable else ''
+        s.T3PV = dtriger_pvs['eigerFileCapture'] if ptychoEnable else ''
 
             
     def updateEigerFileIO(self, filename, num_pts):
@@ -290,43 +285,34 @@ class pvCommsubclass():
     def __init__(self):
         pass
     def user_folder(self):
-        #self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
-        self.rootfolder = r'/mnt/micdata1/bnp/2023-1'
-        #self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
-        #self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
-        self.user ='test_xy9'
+        self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
+        self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
+        self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
         self.user_folder = os.path.join(self.rootfolder,self.user,'Coarse_images')
         return self.user_folder
     def scan_mda(self):
-        #self.scanmda = caget('9idbBNP:saveData_fileName')
-        self.scan1 = 'bnp_fly0001'
-        #self.scan1 = self.scanmda.split('.')[0]
+        self.scanmda = caget('9idbBNP:saveData_fileName')
+        self.scan1 = self.scanmda.split('.')[0]
         return self.scan1
     def user_di(self):
-        #self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
-        self.rootfolder = r'/mnt/micdata1/bnp/2023-1'	
-        #self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
-        self.user ='test_xy9'
-        #self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
+        self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
+        self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
+        self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
         self.user_f = os.path.join(self.rootfolder,self.user)
         return self.user_f
     def user__fine_folder(self):
-        #self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
-        self.rootfolder = r'/mnt/micdata1/bnp/2023-1'
-        #self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
-        #self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
-        self.user ='test_xy9'
+        self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
+        self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
+        self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
         self.user_fine_folder = os.path.join(self.rootfolder,self.user,'Fine_images')
         return self.user_fine_folder
     def user_h5_folder(self):
-        #self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
-        self.rootfolder = r'/mnt/micdata1/bnp/2023-1'
-        #self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
-        self.user ='test_xy9'        
-	#self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
+        self.rootfolder = caget('9idbBNP:saveData_fileSystem')  #root till cycle
+        self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
+        self.user = caget('9idbBNP:saveData_subDir').split('/')[0]  #user and mda
         self.user_h5_folder= os.path.join(self.rootfolder,self.user,'img.dat')
         return self.user_h5_folder
     def next_scan_num(self):
-        self.next_scan = 1 #caget('9idbBNP:saveData_scanNumber')   #next scan read from PV
+        self.next_scan = caget('9idbBNP:saveData_scanNumber')   #next scan read from PV
         return self.next_scan
         

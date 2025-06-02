@@ -13,11 +13,13 @@ from tkinter import ttk
 from scanList import scanList
 from misc import checkEntryDigit
 #from bnpScan import bnpScan, 
-from pvComm import pvComm
-from scanBNP import xrfSetup, scanStart, scanFinish, getCoordinate, getMotorList
+from pvComm import pvComm, pvCommsubclass
+from scanBNP import xrfSetup, scanStart, scanFinish, getCoordinate_2, getMotorList, xanes_ps_c, xanes_ps_n, xrfSetup_fromxanes#, getCoordinate_2
 from logger import stdoutToTextbox
 import time, datetime
 import pandas as pd
+import epics as PV
+import os
 
 class scanFrame():
     
@@ -35,12 +37,14 @@ class scanFrame():
             self.scanclick = True
     
     def scanSetup(self):
-        self.record, self.recordval = self.slist.searchQueue()
+        #xyl: add a flog to determine whether the next one is the same or not 
+        self.flag, self.record, self.recordval = self.slist.searchQueue()  #values for the first in queue and change it to 'scanning'
+    #recordval is the parameters for the first scan  # a function from scanList
         if self.record is not None:
             self.pause_btn['state'] = tk.NORMAL
             self.slist.pbarInit()
             self.scan_start_time = 0
-            self.scdic = {u:self.recordval[i] for i, u in enumerate(self.slist.sclist_col)}
+            self.scdic = {u:self.recordval[i] for i, u in enumerate(self.slist.sclist_col)}  #scans in sclist
             self.scdic.update({'bda':float(self.bda.get())})
             self.checkUserDir()
             self.stype = self.scdic['scanType']
@@ -52,9 +56,30 @@ class scanFrame():
             if self.stype =='Coarse':
                 self.coarse_scnum = self.recordval[0]
             
-            if self.stype == 'Fine':
+            elif self.stype == 'Fine':
+                time.sleep(5)  #give 1 min sleep before start 'Fine' scan
+                print('wait 5s before Fine scan for getting .h5 file')
+                self.cur_ang = round(PV.caget('9idbTAU:SM:ST:ActPos'))  #just get int
+                self.angle_list.append(self.cur_ang)
+                print('current angle: {self.cur_ang} before check fine scan coordinates')
                 self.checkFineScanCoord()
-            else:
+            #----------------xyl: add scan setup for xanes-----------
+            elif self.stype == 'XANES (fixed region)' and self.flag == 2:  # means this one is xanes, previous one is xrf, needs to change to step mode
+                self.coordsReady = True
+                self.motors = xanes_ps_n(self.pvComm,self.scandic)   # change mono to auto, drive 1 to mono, read 1 to NA, center, width, step, dwell
+                self.monitormsg.set('wait for motors to be ready')
+                
+            elif self.stpye == 'XANES (fixed region)' and self.flag == 0: # this one and previous one are xanes, continue step mode
+                self.coordsReady = True
+                self.motors = xanes_ps_c(self.pvComm,self.scandic)   # only change center, width, step, dwell
+                self.monitormsg.set('wait for motors to be ready')
+                
+            elif self.stype == 'XRF' and self.flag == 1:  #this one is xrf, previous one is xanes, needs to change to fly mode
+                self.coordsReady = True
+                self.motors = xrfSetup_fromxanes(self.pvComm,self.scandic)
+                self.monitormsg.set('wait for motors to be ready')
+                
+            else:  # for continuous xrf
                 self.coordsReady = True
                 self.motors = xrfSetup(self.pvComm, self.scdic) # return a list of tuples
                 self.monitormsg.set('wait for motors to be ready')
@@ -72,7 +97,7 @@ class scanFrame():
             self.scdic[s_] = fine_corr[i]
             self.recordval[self.slist.sclist_col.index(s_)] = '%.2f'%(fine_corr[i])
         self.updateRecord()
-    
+    '''
     def checkFineScanCoord(self):
         fine_coor = getCoordinate(self.pvComm, self.coarse_scnum, 
                                   self.scdic)
@@ -83,7 +108,49 @@ class scanFrame():
             self.pending = True
         else:
             self.monitormsg.set('Waiting for coordinates for fine scans')
+    '''
     
+#--------------------------xyl-------------------------
+
+    
+    def checkFineScanCoord(self):
+        coarse_scan_num = pvCommsubclass().scan_mda()  #bnp_fly_xxxx
+        coarse_scan_num_h5 = coarse_scan_num + '.mda.h5'
+        fine_coor = getCoordinate_2(coarse_sc=coarse_scan_num_h5, 
+                                      scandic=self.scdic, flag=self.scdic['flag'])  #function from scanBNP
+        if fine_coor is not None:
+            self.x_scan_list.append(fine_coor[0])
+            self.y_scan_list.append(fine_coor[1])    #make a dataframe to record the fine scan x,y positions
+            self.real_ang_test.append(fine_coor[2])
+            self.updateXYZcoor(fine_coor)  #update the value of 'x_scan' and 'y_scan' from coarse scan
+            self.motors = xrfSetup(self.pvComm, self.scdic)   #from scanBNP: return a turple list: 
+                                                              #[('sm_rot',value of 'target_theta',0.1),
+                                                              # ('z_value', value of 'z_scan',0.5),
+                                                              # ('y_center', value of 'y_scan', 0.1),
+                                                              # ('x_center', value of 'x_scan', 0.1)]
+            self.coordsReady = True
+            self.pending = True
+        else:# for the case that no x y value inputs into fine scan
+            #cur_ang = PV('9idbTAU:SM:ST:ActPos').get()  
+            #print(f'No x and y coordinates, curent angle:{self.cur_ang}')
+            self.monitormsg.set(f'No x and y coordinates, curent angle:{self.cur_ang}')
+            scanFinish(self.pvComm, float(self.bda.get()))
+            self.recordval[1] = 'No x,y value'
+            self.x_scan_list.append('No x found')
+            self.y_scan_list.append('No y found')
+            self.updateRecord()
+            self.motorReady = 0
+            self.pbarscval.set(1)
+            self.slist.pbarInit()
+            self.scan_start_time = 0
+            self.scandone_var.set(False)
+            self.scanSetup()
+        print(self.x_scan_list)
+        self.df = pd.DataFrame(list(zip(self.angle_list,self.x_scan_list,self.y_scan_list)),columns=['Angle','X_pos','Y_pos'])
+        #self.df.to_csv('/mnt/micdata1/bnp/2023-1/test_gui_xyl/fine_x_y_coordinates.csv')
+        self.df.to_csv(f'{self.user_folder}/fine_x_y_coordinates.csv')           
+#------------------------xyl-------------------------------------------------------------
+
     def checkMotorReady(self):
         # Add timeout parameters
         if len(self.motors) > 0:
@@ -142,7 +209,7 @@ class scanFrame():
     
     def scanExec(self):
         # print('scan exect')
-        scanStart(self.pvComm, float(self.bda.get()))
+        scanStart(self.pvComm, float(self.bda.get()))  #in scanBNP.py, change x to piezo mode and move bda to open
         # if status:
         self.pbarscval.set(0.0)
         self.monitormsg.set('Motor ready')
@@ -195,7 +262,7 @@ class scanFrame():
     
         elif not self.pause:
             self.abortall_btn['state'] = tk.DISABLED
-            if self.scanclick & self.pending:
+            if self.scanclick & self.pending:  #seems connect to click scan button
                 if not self.coordsReady:
                     self.checkFineScanCoord()
                     ms = 2000
@@ -442,7 +509,8 @@ class scanFrame():
                              sticky = 'w')
         
         self.detectorMonitor = tk.IntVar()
-        self.detectorMonitor.set(0)
+        #self.detectorMonitor.set(0)
+        self.detectorMonitor.set(1)
         detMonitor_btn = ttk.Checkbutton(
             master=self.scanfrm, text='Detector Monitor', variable=self.detectorMonitor, 
             command=self.update_detCheckValState)
@@ -460,10 +528,11 @@ class scanFrame():
         self.detCheck_entry = tk.Entry(self.scanfrm, width=5, textvariable=self.detCheck_val,
                                   validate='all', validatecommand=(vcmd, "%P"))
         self.detCheck_entry.grid(row = 24, column=5, sticky='w', padx=(150,0))
+        self.detCheck_entry['state'] = tk.DISABLED
 
      
-        self.scmsg = tk.Text(self.scanfrm, wrap = 'word', height = 15, width = 139)
-        self.scmsg.grid(row = 24, column = 1, sticky = 'w', columnspan = 5, 
+        self.scmsg = tk.Text(self.scanfrm, wrap = 'word', height = 15, width = 150)
+        self.scmsg.grid(row = 24, column = 1, sticky = 'w', columnspan = 10, 
                         rowspan = 8, padx=(20,0), pady=(5,0))
         stdoutToTextbox(self.scmsg)
         
@@ -497,7 +566,19 @@ class scanFrame():
         logTemp_chckbx = tk.Checkbutton(self.scanfrm, text = 'Log Temperature',
                                         variable = self.logTemp, width = 20)
         logTemp_chckbx.grid(row =24, column = 5, padx=(200,0))
+        #----------------------------------for test imges-xyl----------------------------------------------------
+        self.x_scan_list = []
+        self.y_scan_list = []
+        self.angle_list = []
+        self.real_ang_test = []
         
+        #-------------------------xyl: cur directory------------------
+        self.rootfolder = PV.caget('9idbBNP:saveData_fileSystem')
+        self.rootfolder = self.rootfolder.replace('//micdata/data1','/mnt/micdata1')
+        self.user = PV.caget('9idbBNP:saveData_subDir').split('/')[0]
+        self.user_folder = os.path.join(self.rootfolder,self.user)
+
+        #-----------------------------------------------------------------------------------------------------------
         try:
             self.mmsg_label.after(1000, self.scanMonitor)
         except:

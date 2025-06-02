@@ -55,7 +55,7 @@ class scanList(object):
         
         inlabels = self.inputs_labels[0]
         inlabels.insert(0, inlabels.pop(inlabels.index('target_theta')))
-        t_col_mod = ['id', 'status', 'scanType', 'smpName'] + inlabels + t_col + ['ptycho', 'eta']
+        t_col_mod = ['id', 'status', 'scanType', 'smpName'] + inlabels + t_col + ['ptycho', 'eta'] +self.inputs_labels[2] #add XANES part
         
         self.sclist_col = tuple(t_col_mod)
         self.sclist['columns']= self.sclist_col
@@ -71,9 +71,9 @@ class scanList(object):
                          stick = 'w')
         
         sb = tk.Scrollbar(self.scanfrm, orient=tk.VERTICAL,command=self.sclist.yview)
-        sb.place(x=1240, y=18, height=400)
+        sb.place(x=1600, y=18, height=400)
         sb_h = tk.Scrollbar(self.scanfrm, orient=tk.HORIZONTAL, command=self.sclist.xview)
-        sb_h.place(x=5, y=420, width=1240, height = 12)
+        sb_h.place(x=5, y=420, width=1600, height = 12)
         self.sclist.config(yscrollcommand=sb.set, xscrollcommand = sb_h.set)
         self.sclist.bind("<Double-1>", self.scanListEdit)
         self.sclist.bind('<1>', self.closePopUpEntry)
@@ -90,7 +90,7 @@ class scanList(object):
                     self.insertParmEntry(theta=float(self.scanParms['target_theta'].get()))
             elif self.scanType.get() == 'Coarse-Fine (Fixed Angle)':
                 self.insertParmEntry()
-            else:
+            elif self.scanType.get() == 'Coarse-Fine':
                 t_min = float(self.scanParms['theta_min'].get())
                 t_inc = float(self.scanParms['theta_inc'].get())
                 t_max = float(self.scanParms['theta_max'].get()) + t_inc
@@ -99,7 +99,12 @@ class scanList(object):
                 
                 for a in angles:
                     self.insertParmEntry(theta=a)
-                    
+            elif self.scanType.get() == 'XANES (fixed region)':
+                scprm_theta0 = [len(self.scanParms[i+'_theta0'].get()) for i in ['x', 'y', 'z']]
+                if not all(scprm_theta0):
+                    self.insertParmEntry()
+                else:
+                    self.insertParmEntry(theta=float(self.scanParms['target_theta'].get()))
             self.tot_time.set('%.3f'%(self.getTotalTime()))
             eta_dt = pd.Timestamp.now() +pd.DateOffset(minutes = self.getTotalTime())
             self.tot_time.set('%s'%(eta_dt.strftime('%Y-%m-%d %X')))
@@ -109,7 +114,7 @@ class scanList(object):
     def insertParmEntry(self, theta = None):
         t_col = self.inputs_labels[1].copy()
         [t_col.remove(i) for i in ['theta_min', 'theta_max', 'theta_inc']]
-        scanparm_label = self.inputs_labels[0] + t_col
+        scanparm_label = self.inputs_labels[0] + t_col + self.inputs_labels[2]  #add XAENS part
         
         scanparm = {k:self.scanParms[k].get() for k in scanparm_label}
         scanparm.update({'id':self.scanidx, 'status':'queue', 
@@ -120,11 +125,51 @@ class scanList(object):
         
                     
         if theta is not None:
-            
             # determine the type of scans
             if self.scanType.get() == 'Coarse-Fine': sctype = ['Coarse', 'Fine']
             else: sctype = [self.scanType.get()]
+            clabel = ['x', 'y', 'z']
+            c0 = [theta] + [float(scanparm[s+'_theta0']) for s in clabel]
+            ctform = coordinate_transform(*c0)
+            for c in clabel:
+                scanparm[c+'_scan'] = '%.2f'%ctform[c]
+            for i in sctype:  
+                if i == 'Fine':
+#                    copy fine(w, h, steps) to regular w, h, steps
+                    dlabels = ['width', 'height', 'w_step', 'h_step', 'dwell']
+                    slabels = ['width_fine', 'height_fine', 'w_step_fine', 'h_step_fine', 'dwell_fine'] 
+                    
+                    for d_, s_ in zip(dlabels, slabels):
+                        scanparm[d_] = scanparm[s_]
+                    scanparm['eta'] = str(float(scanparm['width']) * float(scanparm['height']) * float(scanparm['dwell']) / float(scanparm['w_step']) / float(scanparm['h_step']) / 0.8 / 1e3 / 60)  #time for one fine scan in min
+                    for s in ['x_scan', 'y_scan']:
+                        scanparm[s] = ''
+                    for x in self.inputs_labels[2]:
+                        scanparm[x] = 'NA'
+                    for v in ['elm','n_cllusters','sel_cluster','use_mask','mask_elm','Gaussian_blur','log_his','Energy (keV)','Energe step (keV)','Energy width (keV)', 'Dwell (s)']:
+                        scanparm[v] = 'NA'
+                
+                elif i == 'Coarse':
+                    for v in self.inputs_labels[2]:
+                        scanparm[v] = 'NA' 
+                elif i == 'XRF':
+                    for v in ['elm','n_clusters','sel_cluster','use_mask','mask_elm','Gaussian_blur','log_his',"Energy step (keV)","Energy width (keV)","Dwell (s)"]:
+                        scanparm[v] = 'NA'
+                elif self.scanType.get() == 'XANES (fixed region)':
+                    xanes_list = self.inputs_labels[2] + ['id', 'status', 'scanType', 'smpName', 'target_theta', 'x_theta0', 'y_theta0', 'z_theta0', 'x_scan', 'y_scan', 'z_scan','eta']
+                    scanparm = {a: scanparm[a] if a in xanes_list else 'NA' for a in scanparm}
+
+                    print('Add xanes scan')    
+                scanparm['target_theta'] = theta
+                scanparm['scanType'] = i
+                
+                sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
+                                       
             
+                self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
+                                   text='', values=tuple(sparm))
+                self.scanidx += 1
+            '''
             try:
                 # perform coordinate transform based on given x-, y- and z- at theta 0
                 clabel = ['x', 'y', 'z']
@@ -141,46 +186,61 @@ class scanList(object):
                         
                         for d_, s_ in zip(dlabels, slabels):
                             scanparm[d_] = scanparm[s_]
-                        
+                        scanparm['eta'] = str(float(scanparm['width']) * float(scanparm['height']) * float(scanparm['dwell']) / float(scanparm['w_step']) / float(scanparm['h_step']) / 0.8 / 1e3 / 60)  #time for one fine scan in min
                         for s in ['x_scan', 'y_scan']:
                             scanparm[s] = ''
-                            
+                        for x in self.inputs_labels[2]:
+                            scanparm[x] = 'NA'
+                        for v in ['elm','n_cllusters','sel_cluster','use_mask','mask_elm','Gaussian_blur','log_his','Energy (keV)','Energe step (keV)','Energy width (keV)', 'Dwell (s)']:
+                            scanparm[v] = 'NA'
+                    
+                    elif i == 'Coarse':
+                        for v in self.inputs_labels[2]:
+                            scanparm[v] = 'NA' 
+                    elif i == 'XRF':
+                        for v in ['elm','n_clusters','sel_cluster','use_mask','mask_elm','Gaussian_blur','log_his']+self.inputs_labels[2].remove('Energy (keV)'):
+                            scanparm[v] = 'NA'
+                        
                     scanparm['target_theta'] = theta
                     scanparm['scanType'] = i
-
-                    sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
                     
-    
+                    sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
+                                           
+                
                     self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
                                        text='', values=tuple(sparm))
                     self.scanidx += 1
             except:
                 print('Scan not added, no xyz (theta0) found')   
-        elif self.scanType.get() == 'Coarse-Fine (Fixed Angle)':
-            sctype = ['Coarse', 'Fine']
-            for i in sctype:  
-                if i == 'Fine':
-                    dlabels = ['width', 'height', 'w_step', 'h_step', 'dwell']
-                    slabels = ['width_fine', 'height_fine', 'w_step_fine', 'h_step_fine', 'dwell_fine'] 
-                    
-                    for d_, s_ in zip(dlabels, slabels):
-                        scanparm[d_] = scanparm[s_]
-                    
-                    for s in ['x_scan', 'y_scan']:
-                        scanparm[s] = ''
+
                         
                 # scanparm['target_theta'] = theta
-                scanparm['scanType'] = i
+                #scanparm['scanType'] = i
+               # if i == 'XRF':
+                 #   for v in ['elm','n_clusters','sel_cluster','use_mask','mask_elm','Gaussian_blur','log_his'] + self.inputs_labels[2].remove('Energy (keV)'): 
+                     #   scanparm[v] = 'NA'
+               # sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
+               # self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
+                #                   text='', values=tuple(sparm))
+               # self.scanidx += 1            
+            '''
+        else:
+            
+            if self.scanType.get() == 'XANES (fixed region)':
+                xanes_list = self.inputs_labels[2] + ['id', 'status', 'scanType', 'smpName', 'target_theta', 'x_theta0', 'y_theta0', 'z_theta0', 'x_scan', 'y_scan', 'z_scan','eta']
+                scanparm = {a: scanparm[a] if a in xanes_list else 'NA' for a in scanparm}
+                sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
+                self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
+                                       text='', values=tuple(sparm))
+                print('Add xanes scan')
+            else:
+                
+                for v in ['elm','n_clusters','sel_cluster','use_mask','mask_elm','Gaussian_blur','log_his','Energy step (keV)','Energy width (keV)','Dwell (s)']:
+                    scanparm[v] = 'NA'
                 sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
                 self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
                                    text='', values=tuple(sparm))
-                self.scanidx += 1
-            
-        else:
-            print('in here')
-            sparm = [scanparm[s_] for s_ in list(self.sclist_col)]
-            self.sclist.insert(parent='', index=self.scanidx, iid=self.scanidx,
-                                   text='', values=tuple(sparm))
+                print('Add xrf scan')
             self.scanidx += 1
         self.pbarInit()
     
@@ -218,7 +278,7 @@ class scanList(object):
         t = remaining_st / 60
         for record in self.sclist.get_children():
             if self.sclist.item(record)['values'][1] == 'queue':
-                t += float(self.sclist.item(record)['values'][-1])
+                t += float(self.sclist.item(record)['values'][self.sclist_col.index('eta')])   # change xyl: not [-1], find 'eta' column
         return t
     
     
@@ -248,16 +308,24 @@ class scanList(object):
                 n += 1
         return n
    
-    def searchQueue(self):
+    def searchQueue(self):    #xyl: change to find the end of xanes or xrf
         self.parm = {}
         values = []
-        for record in self.sclist.get_children():
+        for i,record in enumerate(self.sclist.get_children()):
             if self.sclist.item(record)['values'][1] == 'queue':
                 self.parm = {n:v for n, v in zip(self.sclist_col, self.sclist.item(record)['values'])}
                 values = [v for v in self.sclist.item(record)['values']]
                 values[1] = 'scanning'
-                return record, values
-        return None, []
+                ni = i - 1                       #compare with previous one, as long as sctype is different, it will change the setup. If manually changes, it will do as well.
+                nr = self.sclist.get_children()[ni]
+                if self.sclist.item(record)['values'][2] == 'XRF' and self.sclist.item(nr)['values'][2] == 'XANES (fixed region)':
+                    flag = 1
+                elif self.sclist.item(record)['values'][2] == 'XANES (fixed region)' and self.sclist.item(nr)['values'][2] == 'XRF':
+                    flag = 2
+                else:
+                    flag = 0
+                return flag, record, values # return record (items in the scanlist) and the scan parameters for the item 
+        return 0, None, []
     
     def pbarInit(self):
         self.pbarlistmsg.set('Batch scan progress (%d/%d):'%(self.getNumDone(), self.getNumQueue()))
@@ -289,4 +357,3 @@ class EntryPopup(ttk.Entry):
         uvalues[self.column] = self.get()
         self.sclist.item(self.iid, text='', values=tuple(uvalues))
         self.destroy()
-
