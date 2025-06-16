@@ -58,8 +58,8 @@ class pvComm():
         return self.pvs['cur_lines'].time_pre
     
     def getBDAx(self):
-        return 0
-        #return np.round(self.pvs['BDA_pos'].pv.value, 2)
+        #return 0
+        return np.round(self.pvs['BDA_pos'].pv.value, 2)  
     
     def getSMAngle(self):
         return 0

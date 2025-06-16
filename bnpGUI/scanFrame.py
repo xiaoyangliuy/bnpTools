@@ -69,7 +69,7 @@ class scanFrame():
                 self.motors = xanes_ps_n(self.pvComm,self.scandic)   # change mono to auto, drive 1 to mono, read 1 to NA, center, width, step, dwell
                 self.monitormsg.set('wait for motors to be ready')
                 
-            elif self.stpye == 'XANES (fixed region)' and self.flag == 0: # this one and previous one are xanes, continue step mode
+            elif self.stype == 'XANES (fixed region)' and self.flag == 0: # this one and previous one are xanes, continue step mode
                 self.coordsReady = True
                 self.motors = xanes_ps_c(self.pvComm,self.scandic)   # only change center, width, step, dwell
                 self.monitormsg.set('wait for motors to be ready')
@@ -134,7 +134,7 @@ class scanFrame():
             #cur_ang = PV('9idbTAU:SM:ST:ActPos').get()  
             #print(f'No x and y coordinates, curent angle:{self.cur_ang}')
             self.monitormsg.set(f'No x and y coordinates, curent angle:{self.cur_ang}')
-            scanFinish(self.pvComm, float(self.bda.get()))
+            scanFinish(self.scdic, self.pvComm, float(self.bda.get()))
             self.recordval[1] = 'No x,y value'
             self.x_scan_list.append('No x found')
             self.y_scan_list.append('No y found')
@@ -198,7 +198,7 @@ class scanFrame():
     
     def scanDone(self, *args, **kwargs):
         if self.scandone_var.get():
-            scanFinish(self.pvComm, float(self.bda.get()))
+            scanFinish(self.scdic, self.pvComm, float(self.bda.get()))
             self.recordval[1] = 'done'
             self.updateRecord()
             self.motorReady = 0
@@ -209,7 +209,7 @@ class scanFrame():
     
     def scanExec(self):
         # print('scan exect')
-        scanStart(self.pvComm, float(self.bda.get()))  #in scanBNP.py, change x to piezo mode and move bda to open
+        scanStart(self.scdic, self.pvComm, float(self.bda.get()))  #in scanBNP.py, change x to piezo mode and move bda to open
         # if status:
         self.pbarscval.set(0.0)
         self.monitormsg.set('Motor ready')
@@ -289,7 +289,7 @@ class scanFrame():
                     self.checkDetectorStatus()
                     self.logTempPV()
                     self.monitormsg.set('Scanning... will be done at: %s'%self.eta_str)
-                    self.checkYCenterValue()
+                    # self.checkYCenterValue() #probably not needed after piezo replacement
                     
                 else:
                     self.monitormsg.set('scan is paused or has not started yet... check end station shutter')

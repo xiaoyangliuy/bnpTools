@@ -151,6 +151,12 @@ def getMotorList(scandic):
         mlist.append((ml_, float(scandic[p_]), mt_))
     return mlist
 
+'''
+Below is code from Xiaoyang. It is for XANES, but causes issues. 
+Both scanStart() and scanFinish() are defined with 3 parameters, but in scanFrame.py, it is called with only two arguments. 
+
+Modified the calls in scanFrame.py
+'''
 
 def scanStart(scandic, pvComm, bda):   #revised added xanes where not changing to pixel mode
     if scandic['scanType'] == 'XANES (fixed region)':
