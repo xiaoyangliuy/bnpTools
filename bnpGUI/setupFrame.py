@@ -906,7 +906,12 @@ class setupFrame:
         toolbar = NavigationToolbar2Tk(canvas=self.Canvas2D, window=toolbar_frame)
         toolbar.update()
         toolbar.mode = 'pan'
-        # toolbar.message = '' This cause errors. It should be a Tkinter StringVar object, but it is being set to a string.
+        # toolbar.message = '' This cause errors. It should be a Tkinter StringVar object, but it is being set to a string. -sc
+
+        # Customize coordinate display to show integers -sc
+        def format_coord(x,y):
+            return f'x={int(round(x))} y={int(round(y))}'
+        self.Axe2D.format_coord = format_coord
         #-----------------------------------add a box to select h5 scan for ptycho image----------------
         self.enter_h5_scan = tk.StringVar()
         h5_scan_for_pty = tk.Label(self.setupfrm, text='h5 scan for pty:',width=13)
