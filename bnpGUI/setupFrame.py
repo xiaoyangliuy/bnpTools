@@ -831,57 +831,54 @@ class setupFrame:
 
           
     def __init__(self, tabControl):
+        self.pvComm = pvComm()
+
         self.setupfrm = ttk.Frame(tabControl)  #create a frame inside tabControl
 
-        self.selectfolder = tk.StringVar()  #a mutable string variable
-        self.selectfolder.set(" ")  #give the string value to above
+        # create left panel frame
+        #self.left_panel = ttk.Frame(self.setupfrm)
+        #self.left_panel.grid (row = 0, column = 0, sticky='nsew', padx=5, pady=5)
+
+        #row 1: "Open Folder" button and directory display
+        self.selectfolder = tk.StringVar()        #a mutable string variable
+        self.selectfolder.set(" ")                #give the string value to above
         mdafolder_button = tk.Button(
             self.setupfrm, text="Open Folder", command=self.choose_folder
         )  #create the button 'Open Folder' in 'setupfrm' Frame, the function is choose_folder
-        mdafolder_button.grid(column=0, row=0, padx=(5, 5), pady=(5, 5))  #setupfrm is in grid layout, mdafolder_button is in 1 col and 1 row
+
+        mdafolder_button.grid(row=0, column=0, padx=(5, 5), pady=(5, 5))  #setupfrm is in grid layout, mdafolder_button is in 1 col and 1 row
         folder_txt = tk.Label(self.setupfrm, textvariable=self.selectfolder) # create folder_txt label, it display the value of self.selectfolder string
-        folder_txt.grid(row=1, column=0,sticky='ew') #size and pos of folder_txt
-
-        #scannum_txt = tk.Label(self.setupfrm, text="Files:")   #create a scannum_txt column, name:'Files:'
-        #scannum_txt.grid(column=0, row=53, pady=(5, 5), padx=(5, 5))
-
+        folder_txt.grid(row=0, column=1,columnspan=3, sticky='ew', padx=(5,5)) #size and pos of folder_txt
+        
+        #row 2: file dropdown, "Update" button, and detector dropdown
         self.scfile_sv = tk.StringVar()
         self.files_combobox = ttk.Combobox(
             self.setupfrm, textvariable=self.scfile_sv, state="readonly", width=20
         )  #a drupdown box, value of scfile_sv is the selection, restrict to the options, cannot input
-        self.files_combobox.grid(row=1,column=1, pady=(5, 5))
+
+        self.files_combobox.grid(row=1,column=0, columnspan=2, padx=(5,5),pady=(5, 5))
+        #self.files_combobox.grid(row=1,column=0, pady=(5, 5))
         self.files_combobox.bind("<<ComboboxSelected>>", self.load_scan)  #<<ComboboxSelected>>" event is generated when the user selects an item from the list
-        self.pvComm = pvComm()   #all the pvs
-        #        self.scannum_entry = tk.Entry(self.setupfrm, width=10)
-        #        self.scannum_entry.grid(column=1, row = 1, padx=(5,5), pady=(5,5))
 
         loadscan_button = tk.Button(
             self.setupfrm, text="Update", command=self.updateFileList   #update files in folder
         )
-        loadscan_button.grid(row=1,column=2, pady=(5, 5),sticky='ew')
+        loadscan_button.grid(row=1,column=2, padx=(5,5), pady=(5, 5))
+        #loadscan_button.grid(row=1,column=2, pady=(5, 5),sticky='ew')
+
         detector_sv = tk.StringVar()
         self.detector_combobox = ttk.Combobox(
             self.setupfrm, textvariable=detector_sv, state="readonly", width=20
         )
-        self.detector_combobox.grid(row=1,column=3, pady=(5, 5))
+        self.detector_combobox.grid(row=1,column=3, padx=(5,5), pady=(5, 5))
+        #self.detector_combobox.grid(row=1,column=3, pady=(5, 5))
         self.detector_combobox.bind("<<ComboboxSelected>>", self.plot_data)
 
-        self.log_button = tk.Button(
-            self.setupfrm, text="Log", command=self.logscale_changed
-        )
-        self.log_button.grid(column=0, row=52, padx=(4, 5), pady=(0, 0))
-        self.xycorr = tk.StringVar()
-        self.xycorr.set("x, y: (0.00, 0.00)")
-        xycorr_label = tk.Label(self.setupfrm, textvariable=self.xycorr)
-        xycorr_label.grid(row=52, column=1)
-
-        self.openfilemsg = tk.StringVar()
-        self.openfilemsg.set("")
-        self.open_msg_label = tk.Label(self.setupfrm, textvariable=self.openfilemsg)
-        self.open_msg_label.grid(row=53, column=0, columnspan=12)
-        self.file_theta = 0
-        self.file_z = 0
-
+        #row3: matplotlib toolbar
+        toolbar_frame = tk.Frame(master=self.setupfrm)
+        toolbar_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(5,5))
+        
+        # Created matplotlib figure and canvas
         self.Figure2D = Figure()
         self.Axe2D = self.Figure2D.add_axes([0, 0, 1, 1]) #[0, 0, 1, 1] sets the left and bottom edges of the axes to be at 0% of the figure width and height, respectively, and the width and height of the axes to be 100% of the figure width and height, 
         self.Axe2D.set_axis_off()
@@ -891,44 +888,70 @@ class setupFrame:
         self.Canvas2D.draw()
         self.Canvas2D.get_tk_widget().config(width=600, height=600, cursor="cross")
         self.Canvas2D.get_tk_widget().grid(
-            column=0,
+            row = 3, column=0, 
             columnspan=10,
-            row=2,
             rowspan=50,
             padx=(10, 5),
             pady=(5, 5),
-            sticky="W",
-        )  #display 2D plot
-        #------------------------------------add toolbar-------------------------------------
-        toolbar_frame = tk.Frame(master=self.setupfrm)
-        toolbar_frame.grid(column=1, row=0, sticky="ew")
+            sticky="nsew",
+        )  
 
+        # add toobar
         toolbar = NavigationToolbar2Tk(canvas=self.Canvas2D, window=toolbar_frame)
         toolbar.update()
-        toolbar.mode = 'pan'
-        # toolbar.message = '' This cause errors. It should be a Tkinter StringVar object, but it is being set to a string. -sc
+        toolbar.mode = 'none'
+        # toolbar.message = '' This cause errors. It should be a Tkinter StringVar object, but it is being set to a string. (SiC)
 
-        # Customize coordinate display to show integers -sc
+        # customize coordinate display to show integers (SiC)
         def format_coord(x,y):
             return f'x={int(round(x))} y={int(round(y))}'
         self.Axe2D.format_coord = format_coord
+        
+
+        # Below the image display
+        self.log_button = tk.Button(
+            self.setupfrm, text="Log", command=self.logscale_changed
+        )
+        self.log_button.grid(row=53, column=0, padx=(5, 5), pady=(5, 5))
+
+        self.xycorr = tk.StringVar()
+        self.xycorr.set("x, y: (0.00, 0.00)")
+        xycorr_label = tk.Label(self.setupfrm, textvariable=self.xycorr, width=20)
+        xycorr_label.grid(row=53, column=1, columnspan=3, sticky='w')
+
+        self.openfilemsg = tk.StringVar()
+        self.openfilemsg.set("")
+        self.open_msg_label = tk.Label(self.setupfrm, textvariable=self.openfilemsg)
+        self.open_msg_label.grid(row=54, column=0, columnspan=12)
+        self.file_theta = 0
+        self.file_z = 0
+
+        '''
+        self.setupfrm.pack(fill='both', expand=True)
+        '''
+
+        #scannum_txt = tk.Label(self.setupfrm, text="Files:")   #create a scannum_txt column, name:'Files:'
+        #scannum_txt.grid(column=0, row=53, pady=(5, 5), padx=(5, 5))
+
+
         #-----------------------------------add a box to select h5 scan for ptycho image----------------
+
         self.enter_h5_scan = tk.StringVar()
         h5_scan_for_pty = tk.Label(self.setupfrm, text='h5 scan for pty:',width=13)
-        h5_scan_for_pty.grid(row=0,column=2, padx=1,sticky='w')
+        h5_scan_for_pty.grid(row=0,column=4, padx=1,sticky='w')
         h5_scan_for_pty_num = tk.Entry(
                     self.setupfrm,
                     width=5,
                     textvariable=self.enter_h5_scan)
-        h5_scan_for_pty_num.grid(row=0,column=3,sticky='w')
+        h5_scan_for_pty_num.grid(row=0,column=5,sticky='w')
         compare_pty_xrf = tk.Button(self.setupfrm, text='Compare pty & xrf',width=13,command=self.compare_pty_xrf)
-        compare_pty_xrf.grid(row=52,column=2, sticky='w')
+        compare_pty_xrf.grid(row=53,column=5, sticky='w')
         self.elm_pty = tk.StringVar()
         elm_pty = tk.Entry(
                     self.setupfrm,
                     width=6,
                     textvariable=self.elm_pty)
-        elm_pty.grid(row=52,column=3,sticky='w')
+        elm_pty.grid(row=53,column=4,sticky='w')
         #---------------------------------------------------------------------------------------
         self.Canvas2D_Mouse_Hover_Event = self.Canvas2D.mpl_connect(
             "motion_notify_event", self.Canvas2D_Mouser_Hover
