@@ -226,12 +226,7 @@ class setupFrame:
             h5_pty_num = self.enter_h5_scan.get()
             h5_pty_num = str(h5_pty_num).zfill(4)
             h5_pty_sc = f'bnp_fly{h5_pty_num}.mda.h5'
-            flag = 1   # only for test, change to 0 for real
-            if flag == 0:
-                self.simpty_h5 = os.path.join(h5_f, h5_pty_sc)     #get the h5 scan for pty
-            else:   #for test
-                h5_test = '/mnt/micdata1/bnp/2023-1/Isaure/img.dat'
-                self.simpty_h5 = os.path.join(h5_test, h5_pty_sc) 
+            self.simpty_h5 = os.path.join(h5_f, h5_pty_sc)     #get the h5 scan for pty
             with h5py.File(self.simpty_h5, 'r') as dat:    
                 self.x = dat["/MAPS/x_axis"][()]
                 self.y = dat["/MAPS/y_axis"][()]  #get the stage x and y, but ptycho image shape is different from stage x and y move
@@ -264,7 +259,6 @@ class setupFrame:
             self.open_msg_label.config(fg="green")
   #-----------------------xyl: for compare pty and xrf images----------------------------------          
     def compare_pty_xrf(self):
-        flag = 1   # for test, change to 0 for real
         h5_pty_num = self.enter_h5_scan.get()
         h5_pty_num = str(h5_pty_num).zfill(4)
         xrf_elm = self.elm_pty.get()
@@ -274,12 +268,8 @@ class setupFrame:
         axes[0,0].imshow(self.ptycho_img, cmap='gray',origin='lower')
         axes[0,0].set_title('pty')
         h5_pty_sc = f'bnp_fly{h5_pty_num}.mda.h5'
-        if flag == 0:
-            h5_f = pvCommsubclass().user_h5_folder()                       
-            simpty_h5 = os.path.join(h5_f, h5_pty_sc) 
-        else:
-            h5_test = '/mnt/micdata1/bnp/2023-1/Isaure/img.dat'   
-            simpty_h5 = os.path.join(h5_test, h5_pty_sc) 
+        h5_f = pvCommsubclass().user_h5_folder()                       
+        simpty_h5 = os.path.join(h5_f, h5_pty_sc) 
         for xe,ax in zip(xrf_elm2,axes.flatten()[1:]):
             with h5py.File(simpty_h5, 'r') as dat:
                 xrfdata = dat['/MAPS/XRF_roi'][:]
@@ -719,7 +709,7 @@ class setupFrame:
         self.updatexyz_label.config(fg="green")
     #------------------------------for export scan images------------------------------------
     def export_scan_images(self):
-        flag = 1  #just for test, will remove for real experiment
+        flag = 0  #just for test, will remove for real experiment
         if flag ==0:
             value = self.enter_value.get()
             v = value.split(',')
